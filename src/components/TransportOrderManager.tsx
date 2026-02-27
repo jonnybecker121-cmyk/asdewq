@@ -19,9 +19,8 @@ import {
 } from 'lucide-react';
 import { useTransportOrderStore, TransportOrder, TransportItem } from './store/transportOrderStore';
 import { useInventoryStore } from './store/inventoryStore';
-import { toast } from 'sonner';
-// Fallback to framer-motion if motion/react fails in this environment
-import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner@2.0.3';
+import { motion, AnimatePresence } from 'motion/react';
 
 // Notification sound URL
 const NOTIFICATION_SOUND = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';

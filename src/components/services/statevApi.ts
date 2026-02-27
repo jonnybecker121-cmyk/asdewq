@@ -1,8 +1,3 @@
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-
-const PROXY_URL = `https://${projectId}.supabase.co/functions/v1/make-server-002fdd94/api/statev/proxy`;
-
-// Hardcoded System Credentials as requested
 const API_BASE_URL = 'https://api.statev.de/req';
 const API_KEY = 'IPIMSTJVSLFMK3JM1P';
 const API_SECRET = 'aa002ebf141bc823f6c768f3bdb500fd34b0efb656f11d70';
@@ -61,7 +56,6 @@ interface FactoryOption {
 interface NeededItem {
   name: string;
   amount: number;
-  singleWeight?: number;
 }
 
 interface Production {
@@ -102,50 +96,21 @@ interface PurchaseLog {
 }
 
 class StatevApiService {
-  // Use Proxy to avoid CORS and hide secrets (secrets are on the server)
   private async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    try {
-        const bodyPayload = {
-            endpoint: endpoint,
-            method: options.method || 'GET',
-            body: options.body ? JSON.parse(options.body as string) : undefined
-        };
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
 
-        const response = await fetch(PROXY_URL, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(bodyPayload)
-        });
-
-        if (!response.ok) {
-            let errorDetails = '';
-            try {
-                const errJson = await response.json();
-                errorDetails = errJson.details || errJson.error || response.statusText;
-            } catch {
-                errorDetails = response.statusText;
-            }
-
-            if (response.status === 401) {
-                throw new Error(`API Error: 401 Unauthorized - ${errorDetails || 'Zugriff verweigert'}`);
-            }
-            throw new Error(`API Error: ${response.status} - ${errorDetails}`);
-        }
-
-        return await response.json();
-    } catch (err) {
-        // Only log critical errors if not a network failure which might be expected in dev/offline
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes('Failed to fetch')) {
-             console.error('Proxy Request Failed:', err);
-        } else {
-             console.warn('Proxy Connection Failed (using offline/mock mode):', msg);
-        }
-        throw err;
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status} ${response.statusText}`);
     }
+
+    return await response.json();
   }
 
   async getFactoryList(): Promise<Factory[]> {
@@ -153,48 +118,19 @@ class StatevApiService {
   }
 
   async getFactoryInventory(factoryId: string = FACTORY_ID): Promise<Inventory> {
-    // If no ID is provided or hardcoded, fallback to auto-detection logic if implemented,
-    // but here we strictly follow the requested structure using the default ID.
-    if (!factoryId) throw new Error("Factory ID is required");
     return this.makeRequest<Inventory>(`/factory/inventory/${factoryId}`);
   }
 
   async getFactoryMachines(factoryId: string = FACTORY_ID): Promise<Inventory> {
-    if (!factoryId) throw new Error("Factory ID is required");
     return this.makeRequest<Inventory>(`/factory/machine/${factoryId}`);
   }
 
   async getFactoryBankAccounts(factoryId: string = FACTORY_ID): Promise<BankAccount[]> {
-    try {
-      const response = await this.makeRequest<any>(`/factory/bankaccounts/${factoryId}`);
-      if (Array.isArray(response)) {
-        return response;
-      }
-      // If response is an object with data property which is an array (fallback case)
-      if (response && response.data && Array.isArray(response.data)) {
-        return response.data;
-      }
-      // Return empty array if structure is unknown or it's the 401 fallback object
-      return [];
-    } catch (error) {
-      console.warn('Bank accounts fetch failed:', error);
-      return [];
-    }
+    return this.makeRequest<BankAccount[]>(`/factory/bankaccounts/${factoryId}`);
   }
 
   async getTransactions(bankId: string, limit: number = 50, offset: number = 0): Promise<TransactionResponse> {
-    try {
-      const response = await this.makeRequest<any>(`/factory/transactions/${bankId}/${limit}/${offset}`);
-      // Check if response has transactions array
-      if (response && Array.isArray(response.transactions)) {
-        return response as TransactionResponse;
-      }
-      // Return empty structure if invalid or fallback
-      return { totalTransactions: 0, transactions: [] };
-    } catch (error) {
-      console.warn('Transactions fetch failed:', error);
-      return { totalTransactions: 0, transactions: [] };
-    }
+    return this.makeRequest<TransactionResponse>(`/factory/transactions/${bankId}/${limit}/${offset}`);
   }
 
   async getFactoryOption(factoryId: string, option: number): Promise<FactoryOption> {
@@ -202,11 +138,11 @@ class StatevApiService {
   }
 
   async saveFactoryOption(factoryId: string = FACTORY_ID, option: number, title: string, data: string): Promise<any> {
-    // Note: API Secret is handled on the server side proxy for security
     return this.makeRequest('/factory/options', {
       method: 'POST',
       body: JSON.stringify({
         request: {
+          apiSecret: API_SECRET,
           factoryId,
           option,
           title: title.substring(0, 64),
@@ -216,7 +152,7 @@ class StatevApiService {
     });
   }
 
-  async getFactoryProductions(factoryId: string = FACTORY_ID): Promise<Production[]> {
+  async getFactoryProductions(factoryId: string): Promise<Production[]> {
     return this.makeRequest<Production[]>(`/factory/productions/${factoryId}`);
   }
 
@@ -319,5 +255,6 @@ class StatevApiService {
 }
 
 export { FACTORY_ID };
+
 export const statevApi = new StatevApiService();
 export type { Factory, InventoryItem, Inventory, BankAccount, Transaction, TransactionResponse, FactoryOption, Production, NeededItem, SellOffer, BuyOffer, PurchaseLog, PurchaseLogItem };

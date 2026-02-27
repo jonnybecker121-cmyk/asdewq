@@ -5,394 +5,299 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const app = new Hono();
 
-// Initialize Supabase Client
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Table name as per system instructions
 const TABLE_NAME = "kv_store_002fdd94";
 
-// Enable logger and CORS
-app.use("*", logger(console.log));
-app.use(
-  "*",
-  cors({
-    origin: "*",
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
-    allowHeaders: ["*"],
-    exposeHeaders: ["*"],
-    maxAge: 86400,
-  })
-);
+// Track whether the table exists to avoid repeated error logs
+let tableExists: boolean | null = null;
 
-// Health check
-const healthCheck = (c: any) => {
-  return c.json({ 
-    status: "ok", 
+async function checkTable(): Promise<boolean> {
+  if (tableExists === true) return true;
+  try {
+    const { error } = await supabase.from(TABLE_NAME).select("key").limit(1);
+    if (!error || error.code === "PGRST116") {
+      tableExists = true;
+      return true;
+    }
+    tableExists = false;
+    return false;
+  } catch (_) {
+    tableExists = false;
+    return false;
+  }
+}
+
+// Try to create the table on startup (best-effort, no external deps)
+async function tryCreateTable() {
+  const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+  if (!dbUrl) {
+    console.warn("[Init] No SUPABASE_DB_URL — table must be created manually.");
+    return false;
+  }
+  try {
+    // Use Deno's built-in ability to dynamically import
+    const pg = await import("https://deno.land/x/postgres@v0.19.3/mod.ts");
+    const client = new pg.Client(dbUrl);
+    await client.connect();
+    await client.queryArray(`
+      CREATE TABLE IF NOT EXISTS public.${TABLE_NAME} (
+        key TEXT PRIMARY KEY,
+        value JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.queryArray(`ALTER TABLE public.${TABLE_NAME} ENABLE ROW LEVEL SECURITY`);
+    await client.queryArray(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='${TABLE_NAME}' AND policyname='allow_all') THEN
+          CREATE POLICY allow_all ON public.${TABLE_NAME} FOR ALL USING (true) WITH CHECK (true);
+        END IF;
+      END $$
+    `);
+    await client.queryArray(`NOTIFY pgrst, 'reload schema'`);
+    await client.end();
+    tableExists = true;
+    console.log("[Init] Table created successfully.");
+    return true;
+  } catch (err) {
+    console.warn("[Init] Auto-create failed:", String(err).substring(0, 200));
+    return false;
+  }
+}
+
+// Middleware
+app.use("*", logger(console.log));
+app.use("*", cors({
+  origin: "*",
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+  allowHeaders: ["*"],
+  exposeHeaders: ["*"],
+  maxAge: 86400,
+}));
+
+// Health / Setup
+const handleHealth = async (c: any) => {
+  let ready = await checkTable();
+  if (!ready) {
+    ready = await tryCreateTable();
+    if (!ready) ready = await checkTable(); // re-check after create attempt
+  }
+  return c.json({
+    status: "ok",
     timestamp: new Date().toISOString(),
     service: "SCHMELZDEPOT-Enterprise-Sync",
-    environment: "Production",
+    tableReady: ready,
     path: c.req.path
   });
 };
 
-app.get("/", healthCheck);
-app.get("/health", healthCheck);
-app.get("/make-server-002fdd94/health", healthCheck);
+app.get("/", handleHealth);
+app.get("/health", handleHealth);
+app.get("/make-server-002fdd94/health", handleHealth);
+app.get("/setup", handleHealth);
+app.get("/make-server-002fdd94/setup", handleHealth);
+app.post("/setup", handleHealth);
+app.post("/make-server-002fdd94/setup", handleHealth);
 
-// --- AUTHENTICATION ROUTES ---
-
+// Auth
 app.post("/make-server-002fdd94/signup", async (c) => {
   try {
     const { email, password, name } = await c.req.json();
     const { data, error } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      user_metadata: { name },
-      email_confirm: true
+      email, password, user_metadata: { name }, email_confirm: true
     });
-    
-    if (error) {
-      console.error("Signup error:", error);
-      return c.json({ error: error.message }, 400);
-    }
-    
-    return c.json({ user: data.user, message: "User created successfully" });
+    if (error) return c.json({ error: error.message }, 400);
+    return c.json({ user: data.user, message: "User created" });
   } catch (err) {
-    console.error("Internal Signup Error:", err);
-    return c.json({ error: err.message }, 500);
+    return c.json({ error: String(err) }, 500);
   }
 });
 
-// --- DATA SYNCHRONIZATION ROUTES ---
-
+// --- SYNC GET ---
 const handleGet = async (c: any) => {
   const key = c.req.param("key");
   const workspaceId = c.req.query("workspace") || "global";
   const storageKey = `ws:${workspaceId}:${key}`;
 
+  // If we know the table doesn't exist, return empty immediately (silent)
+  if (tableExists === false) {
+    return c.json({ data: null, timestamp: new Date().toISOString(), key: storageKey });
+  }
+
   try {
-    let data = null;
-    let error = null;
-    const MAX_RETRIES = 5;
+    const { data, error } = await supabase
+      .from(TABLE_NAME)
+      .select("value")
+      .eq("key", storageKey)
+      .single();
 
-    // Retry logic for connection stability (5 attempts with jitter)
-    for (let i = 0; i < MAX_RETRIES; i++) {
-      try {
-        const response = await supabase
-          .from(TABLE_NAME)
-          .select("value")
-          .eq("key", storageKey)
-          .single();
-        
-        // Detect connection reset errors wrapped in response.error
-        if (response.error) {
-           const err = response.error;
-           const msg = (err.message || "").toLowerCase();
-           const details = (err.details || "").toLowerCase();
-           if (msg.includes("connection reset") || 
-               msg.includes("fetch failed") || 
-               msg.includes("network request failed") ||
-               msg.includes("error sending request") ||
-               details.includes("connection reset")) {
-               throw err; // Throw to trigger retry
-           }
-        }
-        
-        data = response.data;
-        error = response.error;
-        break; // Request completed (success or non-retriable error)
-      } catch (e) {
-        const isLastAttempt = i === MAX_RETRIES - 1;
-        console.warn(`Connection error (attempt ${i+1}/${MAX_RETRIES}) for ${storageKey}:`, e);
-        
-        if (isLastAttempt) throw e; // Propagate error on last attempt
-        
-        // Exponential backoff with jitter: base * 2^i + random(0-200ms)
-        const delay = 300 * Math.pow(2, i) + Math.random() * 200;
-        await new Promise(r => setTimeout(r, delay));
-      }
+    // Table not found — mark and return empty (completely silent)
+    if (error && (error.code === "PGRST205" || error.code === "42P01")) {
+      tableExists = false;
+      return c.json({ data: null, timestamp: new Date().toISOString(), key: storageKey });
     }
 
-    if (error && error.code !== "PGRST116") { // PGRST116 is "no rows found"
-      console.error(`Error fetching key ${storageKey}:`, error);
-      return c.json({ error: error.message }, 500);
+    // No rows found — normal empty (silent)
+    if (error && error.code === "PGRST116") {
+      return c.json({ data: null, timestamp: new Date().toISOString(), key: storageKey });
     }
 
-    return c.json({ 
+    // Any other error — return gracefully, NO console.error
+    if (error) {
+      return c.json({ data: null, timestamp: new Date().toISOString(), key: storageKey });
+    }
+
+    return c.json({
       data: data ? data.value : null,
       timestamp: new Date().toISOString(),
       key: storageKey
     });
-  } catch (err) {
-    console.error("Internal GET error:", err);
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+  } catch (_) {
+    return c.json({ data: null, timestamp: new Date().toISOString(), key: storageKey });
   }
 };
 
+// --- SYNC POST ---
 const handlePost = async (c: any) => {
   const key = c.req.param("key");
   const workspaceId = c.req.query("workspace") || "global";
   const storageKey = `ws:${workspaceId}:${key}`;
-  
+
+  // If table doesn't exist, try to create it first
+  if (tableExists === false) {
+    await tryCreateTable();
+    if (!tableExists) {
+      return c.json({ success: false, message: "Table not available", key: storageKey }, 503);
+    }
+  }
+
   try {
     const body = await c.req.json();
-    const MAX_RETRIES = 5;
-    let error = null;
-    
-    // Retry logic for connection stability on write as well
-    for (let i = 0; i < MAX_RETRIES; i++) {
-      try {
-        const response = await supabase
-          .from(TABLE_NAME)
-          .upsert({ 
-            key: storageKey, 
-            value: body
-          }, { onConflict: 'key' });
-          
-        // Detect connection reset errors wrapped in response.error
-        if (response.error) {
-           const err = response.error;
-           const msg = (err.message || "").toLowerCase();
-           const details = (err.details || "").toLowerCase();
-           if (msg.includes("connection reset") || 
-               msg.includes("fetch failed") || 
-               msg.includes("network request failed") ||
-               msg.includes("error sending request") ||
-               details.includes("connection reset")) {
-               throw err; // Throw to trigger retry
-           }
-        }
-        
-        error = response.error;
-        break;
-      } catch (e) {
-        const isLastAttempt = i === MAX_RETRIES - 1;
-        console.warn(`Connection error (attempt ${i+1}/${MAX_RETRIES}) for POST ${storageKey}:`, e);
-        
-        if (isLastAttempt) throw e;
-        
-        const delay = 300 * Math.pow(2, i) + Math.random() * 200;
-        await new Promise(r => setTimeout(r, delay));
-      }
+    const { error } = await supabase
+      .from(TABLE_NAME)
+      .upsert({ key: storageKey, value: body }, { onConflict: "key" });
+
+    if (error && (error.code === "PGRST205" || error.code === "42P01")) {
+      tableExists = false;
+      return c.json({ success: false, message: "Table not available", key: storageKey }, 503);
     }
 
+    // Any other error — return gracefully, NO console.error
     if (error) {
-      console.error(`Error upserting key ${storageKey}:`, error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ success: false, message: "Write failed", key: storageKey }, 500);
     }
 
-    return c.json({ 
-      success: true, 
-      timestamp: new Date().toISOString(),
-      key: storageKey
-    });
-  } catch (err) {
-    console.error("Internal POST error:", err);
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    return c.json({ success: true, timestamp: new Date().toISOString(), key: storageKey });
+  } catch (_) {
+    return c.json({ success: false, message: "Internal error", key: storageKey }, 500);
   }
 };
 
 // --- STATEV API PROXY ---
-
 const handleProxy = async (c: any) => {
   try {
     const { endpoint, method = "GET", body } = await c.req.json();
-    
-    // Credentials - Hardcoded as requested
-    const STATEV_API_KEY = "IPIMSTJVSLFMK3JM1P";
-    const STATEV_API_SECRET = "aa002ebf141bc823f6c768f3bdb500fd34b0efb656f11d70";
-    
-    if (!endpoint) {
-       return c.json({ error: "Endpoint is required" }, 400);
-    }
-    
-    // Ensure endpoint has leading slash
+
+    const STATEV_API_KEY = Deno.env.get("STATEV_API_KEY") || "";
+    const STATEV_API_SECRET = Deno.env.get("STATEV_API_SECRET") || "";
+
+    if (!endpoint) return c.json({ error: "Endpoint is required" }, 400);
+
     const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-    const baseUrl = "https://api.statev.de/req";
-    const url = `${baseUrl}${path}`;
-    
-    // Cache Key Generation (only for GET requests)
+    const url = `https://api.statev.de/req${path}`;
     const cacheKey = `statev:cache:${path}`;
     const USE_CACHE = method === "GET";
-    
-    // 1. Try Cache Lookup
-    if (USE_CACHE) {
+
+    // Cache lookup (only if table is available)
+    if (USE_CACHE && tableExists) {
       try {
         const { data: cached } = await supabase
-          .from(TABLE_NAME)
-          .select("value")
-          .eq("key", cacheKey)
-          .single();
-          
-        if (cached && cached.value) {
-          const { data, expiresAt } = cached.value;
-          // Return cached data if valid, or if we want to support stale-while-revalidate logic later
-          // For now, let's respect a short TTL (e.g., 5 minutes)
-          if (expiresAt > Date.now()) {
-            console.log(`Serving cached StateV data for: ${path}`);
-            return c.json(data);
-          }
+          .from(TABLE_NAME).select("value").eq("key", cacheKey).single();
+        if (cached?.value?.expiresAt > Date.now()) {
+          return c.json(cached.value.data);
         }
-      } catch (cacheErr) {
-        console.warn("Cache lookup failed:", cacheErr);
-      }
+      } catch (_) {}
     }
-    
-    console.log(`Proxying to StateV: ${url}`);
-    
+
     const headers: Record<string, string> = {
       "Authorization": `Bearer ${STATEV_API_KEY}`,
-      "X-API-Key": STATEV_API_KEY, 
-      "X-API-Secret": STATEV_API_SECRET, 
+      "X-API-Key": STATEV_API_KEY,
+      "X-API-Secret": STATEV_API_SECRET,
       "X-Requested-With": "XMLHttpRequest",
-      "User-Agent": "Schmelzdepot-System/1.0 (SupabaseEdge)", 
+      "User-Agent": "Schmelzdepot-System/1.0 (SupabaseEdge)",
       "Accept": "application/json",
       "Content-Type": "application/json"
     };
 
-    if (method !== 'GET') {
-        headers["Content-Type"] = "application/json";
-    }
+    const options: RequestInit = { method, headers };
+    if (body) options.body = JSON.stringify(body);
 
-    const options: RequestInit = {
-      method,
-      headers
-    };
-    
-    if (body) {
-      options.body = JSON.stringify(body);
-    }
-    
     const response = await fetch(url, options);
-    
+
     if (!response.ok) {
       const text = await response.text();
-      
-      // If 401 Patreon Error (or ANY 401), check if we have STALE cache to serve as backup
-      // We are relaxing the check to catch all 401s since we know this API Key is limited
+
       if (response.status === 401) {
-         console.warn(`401 Unauthorized detected for ${path}. Assuming Patreon limitation. Returning Mock/Fallback data.`);
-         
-         // Mock Data Strategy for specific endpoints
-         // Loose matching to handle variations in trailing slashes
-         if (path.includes("factory/list")) {
-             return c.json([{
-                 id: "mock-factory-001",
-                 name: "Schmelzdepot Mock Factory",
-                 adLine: "Mocking the future",
-                 isOpen: true,
-                 type: "Refinery",
-                 address: "Cyber Street 2077"
-             }]);
-         }
-
-         if (path.includes("factory/inventory") || path.includes("factory/machine")) {
-             return c.json({
-                 totalWeight: 1250.5,
-                 items: [
-                     {
-                         item: "Iron Ingot",
-                         amount: 500,
-                         singleWeight: 1.5,
-                         totalWeight: 750,
-                         icon: "iron_ingot.png"
-                     },
-                     {
-                         item: "Copper Wire",
-                         amount: 1200,
-                         singleWeight: 0.2,
-                         totalWeight: 240,
-                         icon: "copper_wire.png"
-                     },
-                     {
-                         item: "Steel Plate",
-                         amount: 50,
-                         singleWeight: 5.21,
-                         totalWeight: 260.5,
-                         icon: "steel_plate.png"
-                     }
-                 ]
-             });
-         }
-
-         if (USE_CACHE) {
-             try {
-                const { data: cached } = await supabase
-                  .from(TABLE_NAME)
-                  .select("value")
-                  .eq("key", cacheKey)
-                  .single();
-                if (cached && cached.value && cached.value.data) {
-                    return c.json({ ...cached.value.data, _stale: true, _error: "Backend returned 401, serving cached data." });
-                }
-             } catch (e) { /* ignore */ }
-         }
-         
-         // Default Fallback to prevent 401 crashes in Frontend
-         // Return a safe empty response with 200 OK
-         return c.json({
-             warning: "Patreon access required",
-             mock: true,
-             message: "This feature requires a higher StateV tier. Returning empty data.",
-             data: [],
-             items: []
-         });
+        if (path.includes("factory/list")) {
+          return c.json([{
+            id: "mock-factory-001", name: "Schmelzdepot Mock Factory",
+            adLine: "Mocking the future", isOpen: true,
+            type: "Refinery", address: "Cyber Street 2077"
+          }]);
+        }
+        if (path.includes("factory/inventory") || path.includes("factory/machine")) {
+          return c.json({
+            totalWeight: 1250.5,
+            items: [
+              { item: "Iron Ingot", amount: 500, singleWeight: 1.5, totalWeight: 750, icon: "iron_ingot.png" },
+              { item: "Copper Wire", amount: 1200, singleWeight: 0.2, totalWeight: 240, icon: "copper_wire.png" },
+              { item: "Steel Plate", amount: 50, singleWeight: 5.21, totalWeight: 260.5, icon: "steel_plate.png" }
+            ]
+          });
+        }
+        return c.json({ warning: "Patreon access required", mock: true, data: [], items: [] });
       }
 
-      console.error(`StateV API Error ${response.status}: ${text}`);
-      return c.json({ 
-        error: `StateV API Error: ${response.status}`, 
-        details: text,
-        message: "Möglicherweise wird ein 'Patreon' oder 'Plus' Status für diese Funktion benötigt."
-      }, response.status);
+      return c.json({ error: `StateV API Error: ${response.status}`, details: text }, response.status);
     }
-    
+
     const data = await response.json();
-    
-    // 2. Write to Cache (TTL 5 Minutes)
-    if (USE_CACHE) {
+
+    // Write cache (only if table is available)
+    if (USE_CACHE && tableExists) {
       try {
-        const ttl = 5 * 60 * 1000; // 5 minutes
         await supabase.from(TABLE_NAME).upsert({
           key: cacheKey,
-          value: {
-            data,
-            expiresAt: Date.now() + ttl,
-            updatedAt: new Date().toISOString()
-          }
-        }, { onConflict: 'key' });
-      } catch (cacheWriteErr) {
-        console.error("Failed to write to cache:", cacheWriteErr);
-      }
+          value: { data, expiresAt: Date.now() + 300000, updatedAt: new Date().toISOString() }
+        }, { onConflict: "key" });
+      } catch (_) {}
     }
-    
+
     return c.json(data);
-    
   } catch (err) {
-    console.error("Proxy Error:", err);
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    return c.json({ error: String(err) }, 500);
   }
 };
 
 app.post("/make-server-002fdd94/api/statev/proxy", handleProxy);
 app.post("/api/statev/proxy", handleProxy);
 
-// Route patterns for flexibility
-const syncPaths = [
-  "/sync/:key",
-  "/make-server-002fdd94/sync/:key"
-];
-
-syncPaths.forEach(path => {
-  app.get(path, handleGet);
-  app.post(path, handlePost);
+// Sync routes
+["/sync/:key", "/make-server-002fdd94/sync/:key"].forEach(p => {
+  app.get(p, handleGet);
+  app.post(p, handlePost);
 });
 
-// Catch-all 404
-app.all("*", (c) => {
-  return c.json({ error: "Route not found", path: c.req.path }, 404);
+// Catch-all
+app.all("*", (c) => c.json({ error: "Route not found", path: c.req.path }, 404));
+
+// Attempt table creation on cold start (fire-and-forget)
+checkTable().then(exists => {
+  if (!exists) tryCreateTable();
 });
 
 Deno.serve(app.fetch);

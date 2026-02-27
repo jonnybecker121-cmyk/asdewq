@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCHMELZDEPOT - Manager & Kalkulation</title>
+    
+    <!-- 
+      OFFLINE MODUS:
+      Für 100% Offline-Nutzung:
+      1. tailwind.min.css lokal speichern und verlinken.
+      2. html2canvas.min.js lokal speichern und verlinken.
+      3. lucide.min.js lokal speichern und verlinken.
+    -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .sidebar-active { background-color: rgba(255, 128, 0, 0.1); color: #ff8000; border-right: 3px solid #ff8000; }
+        .sidebar-item:hover:not(.sidebar-active) { background-color: #f3f4f6; }
+        
+        /* Transitions */
+        .fade-in { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+        .hidden-section { display: none; }
+        .visible-section { display: block; animation: fadeIn 0.3s ease; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 h-screen flex overflow-hidden">
+
+    <!-- SIDEBAR -->
+    <aside class="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-20">
+        <div class="h-16 flex items-center px-6 border-b border-gray-200">
+            <div class="p-2 bg-orange-500 rounded-lg mr-3 shadow-lg shadow-orange-500/20">
+                <i data-lucide="building-2" class="text-white w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg tracking-tight">SCHMELZDEPOT</h1>
+                <p class="text-xs text-gray-500">Full Suite V2</p>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+            <button onclick="navigate('dashboard')" id="nav-dashboard" class="sidebar-item w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg text-gray-700 transition-colors sidebar-active">
+                <i data-lucide="layout-dashboard" class="w-5 h-5 mr-3"></i>
+                Dashboard
+            </button>
+            <button onclick="navigate('orders')" id="nav-orders" class="sidebar-item w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg text-gray-700 transition-colors">
+                <i data-lucide="shopping-cart" class="w-5 h-5 mr-3"></i>
+                Aufträge
+            </button>
+            <button onclick="navigate('calculator')" id="nav-calculator" class="sidebar-item w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg text-gray-700 transition-colors">
+                <i data-lucide="calculator" class="w-5 h-5 mr-3"></i>
+                Kalkulator
+            </button>
+            <button onclick="navigate('inventory')" id="nav-inventory" class="sidebar-item w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg text-gray-700 transition-colors">
+                <i data-lucide="package" class="w-5 h-5 mr-3"></i>
+                Lager / Preise
+            </button>
+             <button onclick="navigate('documents')" id="nav-documents" class="sidebar-item w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg text-gray-700 transition-colors">
+                <i data-lucide="file-text" class="w-5 h-5 mr-3"></i>
+                Lieferschein/Rechnung
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="exportData()" class="text-xs text-gray-500 hover:text-orange-600 flex items-center gap-1 mb-2">
+                <i data-lucide="download" class="w-3 h-3"></i> Backup speichern
+            </button>
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold shadow-md">
+                    SD
+                </div>
+                <div>
+                    <p class="text-sm font-medium">Local User</p>
+                    <p class="text-xs text-green-600 flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                        Online
+                    </p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col min-w-0 bg-gray-50 overflow-hidden">
+        <!-- HEADER -->
+        <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 flex-shrink-0">
+            <h2 id="page-title" class="text-xl font-semibold text-gray-800">Dashboard</h2>
+            <div class="flex gap-2">
+                <button onclick="saveData()" class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 rounded-md border border-green-200 hover:bg-green-100 transition-colors">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Auto-Save Active
+                </button>
+            </div>
+        </header>
+
+        <!-- CONTENT AREA -->
+        <div class="flex-1 overflow-auto p-6 scroll-smooth">
+            
+            <!-- VIEW: DASHBOARD -->
+            <div id="view-dashboard" class="visible-section space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                        <p class="text-sm font-medium text-gray-500">Offene Aufträge</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mt-2" id="dash-open">0</h3>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                        <p class="text-sm font-medium text-gray-500">Umsatz (Abgeschlossen)</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mt-2" id="dash-revenue">€ 0,00</h3>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                        <p class="text-sm font-medium text-gray-500">Gespeicherte Artikel</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mt-2" id="dash-items">0</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: ORDERS -->
+            <div id="view-orders" class="hidden-section space-y-6">
+                 <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-lg">Auftragsliste</h3>
+                    <button onclick="openOrderModal()" class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Neuer Auftrag
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-200px)]">
+                    <!-- Column Open -->
+                    <div class="bg-gray-100 rounded-xl p-4 flex flex-col gap-3 overflow-y-auto border border-gray-200">
+                        <div class="flex items-center gap-2 text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">
+                            <div class="w-2 h-2 rounded-full bg-blue-500"></div> Offen / In Bearbeitung
+                        </div>
+                        <div id="orders-list-open" class="space-y-3"></div>
+                    </div>
+                    <!-- Column Done -->
+                    <div class="bg-gray-100 rounded-xl p-4 flex flex-col gap-3 overflow-y-auto border border-gray-200">
+                        <div class="flex items-center gap-2 text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">
+                            <div class="w-2 h-2 rounded-full bg-green-500"></div> Abgeschlossen
+                        </div>
+                         <div id="orders-list-done" class="space-y-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: CALCULATOR (NEW) -->
+            <div id="view-calculator" class="hidden-section space-y-6">
+                <div class="grid grid-cols-1 xl:grid-cols-[350px_1fr] gap-6">
+                    
+                    <!-- LEFT COL: RAW MATERIALS & ENGINES -->
+                    <div class="space-y-6">
+                        <!-- Raw Materials -->
+                        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                            <h3 class="font-semibold mb-4 flex items-center gap-2"><i data-lucide="cylinder" class="w-4 h-4"></i> Rohstoffe</h3>
+                            <div class="flex gap-2 mb-3">
+                                <input id="raw-name" placeholder="Name (z.B. Eisen)" class="flex-1 h-9 px-3 text-sm border rounded">
+                                <input id="raw-price" type="number" placeholder="€" class="w-20 h-9 px-3 text-sm border rounded">
+                                <button onclick="addRawMat()" class="bg-gray-900 text-white h-9 w-9 rounded flex items-center justify-center hover:bg-black">+</button>
+                            </div>
+                            <div id="raw-list" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                <!-- List -->
+                            </div>
+                        </div>
+
+                        <!-- Engines -->
+                         <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                            <h3 class="font-semibold mb-4 flex items-center gap-2"><i data-lucide="zap" class="w-4 h-4"></i> Motoren</h3>
+                            <div class="flex gap-2 mb-3">
+                                <input id="eng-name" placeholder="Bez. (z.B. V6)" class="flex-1 h-9 px-3 text-sm border rounded">
+                                <input id="eng-price" type="number" placeholder="€" class="w-20 h-9 px-3 text-sm border rounded">
+                                <button onclick="addEngine()" class="bg-gray-900 text-white h-9 w-9 rounded flex items-center justify-center hover:bg-black">+</button>
+                            </div>
+                            <div id="eng-list" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                <!-- List -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT COL: CALCULATOR -->
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col h-fit">
+                        <div class="flex justify-between items-start mb-6 border-b pb-4">
+                            <div>
+                                <h2 class="text-xl font-bold">Kalkulator</h2>
+                                <p class="text-sm text-gray-500">Berechne Preise für Fahrzeuge oder Artikel basierend auf Rohstoffen.</p>
+                            </div>
+                            <select id="calc-mode" onchange="toggleCalcMode()" class="bg-gray-100 border-none text-sm font-medium px-3 py-1.5 rounded-lg cursor-pointer hover:bg-gray-200">
+                                <option value="part">Modus: Einfaches Bauteil</option>
+                                <option value="car">Modus: Fahrzeug</option>
+                            </select>
+                        </div>
+
+                        <!-- Car Selector (Hidden by default) -->
+                        <div id="calc-car-selects" class="hidden mb-6 bg-orange-50 p-4 rounded-lg border border-orange-100">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-xs font-bold text-orange-800 uppercase">Marke</label>
+                                    <select id="car-brand" onchange="updateCarModels()" class="w-full mt-1 h-9 border-orange-200 rounded text-sm"></select>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-orange-800 uppercase">Modell</label>
+                                    <select id="car-model" onchange="autoFillName()" class="w-full mt-1 h-9 border-orange-200 rounded text-sm"></select>
+                                </div>
+                            </div>
+                            <div id="car-cat-info" class="text-xs text-orange-600 mt-2 font-medium"></div>
+                        </div>
+
+                        <!-- Product Name -->
+                        <div class="mb-6">
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Produkt Bezeichnung</label>
+                            <input id="calc-prod-name" type="text" placeholder="z.B. Verstärkte Stahlplatte" class="w-full h-10 px-3 border border-gray-300 rounded-lg font-medium">
+                        </div>
+
+                        <!-- Ingredients Table -->
+                        <div class="flex-1 min-h-[300px] flex flex-col">
+                            <div class="flex items-end gap-3 mb-4">
+                                <div class="flex-1">
+                                    <label class="text-xs font-medium text-gray-500">Zutat hinzufügen</label>
+                                    <select id="calc-ing-select" class="w-full h-9 border-gray-300 rounded text-sm mt-1"></select>
+                                </div>
+                                <div class="w-24">
+                                    <label class="text-xs font-medium text-gray-500">Menge</label>
+                                    <input id="calc-ing-qty" type="number" value="1" class="w-full h-9 border-gray-300 rounded text-sm mt-1">
+                                </div>
+                                <button onclick="addCalcIng()" class="h-9 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded text-sm font-medium">Add</button>
+                            </div>
+
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-50 text-gray-500 border-b">
+                                    <tr>
+                                        <th class="text-left py-2 pl-2">Inhalt</th>
+                                        <th class="text-right py-2">Menge</th>
+                                        <th class="text-right py-2">Kosten</th>
+                                        <th class="w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="calc-tbody" class="divide-y"></tbody>
+                            </table>
+
+                            <!-- Summary -->
+                            <div class="mt-auto pt-6 border-t space-y-3">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-500">Materialkosten (EK)</span>
+                                    <span class="font-medium" id="val-cost">€ 0,00</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm text-gray-500">Marge (%)</span>
+                                        <input id="calc-margin" type="number" value="20" oninput="recalcTotals()" class="w-16 h-8 text-center border rounded text-sm">
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="text-xs text-green-600 block">Gewinn</span>
+                                        <span class="font-medium text-green-600" id="val-profit">€ 0,00</span>
+                                    </div>
+                                </div>
+                                <div class="flex justify-between items-center bg-gray-900 text-white p-4 rounded-lg mt-4">
+                                    <span class="font-medium">Verkaufspreis</span>
+                                    <span class="text-2xl font-bold text-orange-400" id="val-final">€ 0,00</span>
+                                </div>
+                            </div>
+
+                            <button onclick="saveCalcToInventory()" class="w-full mt-4 py-3 border-2 border-gray-900 text-gray-900 font-bold rounded-lg hover:bg-gray-50 transition-colors">
+                                Als Artikel im Lager speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: INVENTORY -->
+            <div id="view-inventory" class="hidden-section space-y-6">
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                        <h3 class="font-bold text-lg">Lager & Preise</h3>
+                         <!-- Manual Item Add -->
+                        <div class="flex gap-2">
+                             <input id="inv-quick-name" placeholder="Name" class="h-9 px-3 border rounded text-sm w-48">
+                             <input id="inv-quick-price" type="number" placeholder="€" class="h-9 px-3 border rounded text-sm w-24">
+                             <button onclick="addQuickItem()" class="bg-gray-900 text-white px-3 rounded text-sm">Add</button>
+                        </div>
+                    </div>
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-gray-50 text-gray-500 uppercase font-medium text-xs">
+                            <tr>
+                                <th class="px-6 py-3">Artikel / Fahrzeug</th>
+                                <th class="px-6 py-3 text-right">Preis</th>
+                                <th class="px-6 py-3 text-right">Typ</th>
+                                <th class="px-6 py-3 text-right">Aktion</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inv-list" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- VIEW: DOCUMENTS (The Tool from before) -->
+            <div id="view-documents" class="hidden-section">
+                 <div class="grid grid-cols-1 xl:grid-cols-[400px_1fr] gap-8">
+                    <!-- EDITOR -->
+                    <div class="bg-white rounded-xl border shadow-sm p-6 space-y-6 h-fit">
+                        <h2 class="text-xl font-semibold border-b pb-4">Dokumenten Editor</h2>
+                        
+                        <div class="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                            <label class="text-xs font-bold text-blue-800 uppercase">Daten aus Auftrag laden</label>
+                            <select id="doc-load-order" class="w-full mt-1 h-9 border-blue-200 rounded text-sm"></select>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-xs font-bold text-gray-500 uppercase">Typ</label>
+                                <select id="docTypeSelect" class="w-full h-9 border-gray-300 rounded text-sm">
+                                    <option value="delivery">Lieferschein</option>
+                                    <option value="confirmation">Bestellbestätigung</option>
+                                    <option value="invoice">Rechnung</option>
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <input id="doc-customerName" placeholder="Kunde" class="h-9 px-3 border rounded text-sm">
+                                <input id="doc-orderNumber" placeholder="Nr." class="h-9 px-3 border rounded text-sm">
+                            </div>
+                            <textarea id="doc-deliveryAddress" placeholder="Adresse" class="w-full p-2 border rounded text-sm h-20"></textarea>
+                            <div class="grid grid-cols-2 gap-4">
+                                <input id="doc-deliveryDate" type="date" class="h-9 px-3 border rounded text-sm">
+                                <input id="doc-paymentNote" placeholder="Notiz" class="h-9 px-3 border rounded text-sm">
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between mb-2">
+                                <label class="text-sm font-medium">Positionen</label>
+                                <button onclick="addDocItem()" class="text-xs bg-gray-100 px-2 py-1 rounded">+ Pos</button>
+                            </div>
+                            <div id="doc-items-container" class="space-y-2"></div>
+                        </div>
+
+                        <button onclick="exportAsPNG()" class="w-full bg-black text-white h-10 rounded font-medium flex items-center justify-center gap-2 hover:bg-gray-800">
+                            <i data-lucide="download" class="w-4 h-4"></i> Als PNG speichern
+                        </button>
+                    </div>
+
+                    <!-- PREVIEW CANVAS -->
+                    <div class="bg-gray-200/50 p-8 rounded-xl overflow-auto flex justify-center">
+                        <div style="transform: scale(0.75); transform-origin: top center;">
+                            <div id="previewCanvas" style="width: 949px; min-height: 1200px; background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.1); display: flex; flex-direction: column; font-family: Arial, sans-serif;">
+                                <!-- Header Image -->
+                                <div id="doc-header-img" class="w-full"></div>
+                                
+                                <!-- Info Block -->
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; border-bottom: 2px solid #eee;">
+                                    <div style="padding: 40px; border-right: 2px solid #eee;">
+                                        <div style="color:#666; font-size:12px; text-transform:uppercase; margin-bottom:4px;">Empfänger</div>
+                                        <div id="p-name" style="font-size:22px; font-weight:bold; color:#111; margin-bottom:10px;">-</div>
+                                        <div id="p-address" style="font-size:16px; color:#333; white-space: pre-line;">-</div>
+                                    </div>
+                                    <div style="padding: 40px;">
+                                        <div style="color:#666; font-size:12px; text-transform:uppercase; margin-bottom:4px;">Dokument</div>
+                                        <div id="p-title" style="font-size:28px; font-weight:bold; color:#ff8000; margin-bottom:20px;">LIEFERSCHEIN</div>
+                                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                                            <span style="color:#666;">Nummer:</span>
+                                            <span id="p-number" style="font-weight:bold;">-</span>
+                                        </div>
+                                        <div style="display:flex; justify-content:space-between;">
+                                            <span style="color:#666;">Datum:</span>
+                                            <span id="p-date" style="font-weight:bold;">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Table -->
+                                <div style="padding: 40px; flex: 1;">
+                                    <table style="width:100%; border-collapse: collapse;">
+                                        <thead style="background:#ff8000; color:white;">
+                                            <tr>
+                                                <th style="padding:15px; text-align:left;">POS</th>
+                                                <th style="padding:15px; text-align:center;">MENGE</th>
+                                                <th class="p-price" style="padding:15px; text-align:right;">PREIS</th>
+                                                <th class="p-price" style="padding:15px; text-align:right;">GESAMT</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="p-tbody"></tbody>
+                                    </table>
+                                    
+                                    <div id="p-summary" style="margin-top:40px; border-top:2px solid #eee; padding-top:20px; display:none;">
+                                        <div style="display:flex; justify-content:space-between; font-size:18px; font-weight:bold; margin-top:20px;">
+                                            <span>Gesamtsumme</span>
+                                            <span id="p-total" style="color:#ff8000;">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Footer -->
+                                <div style="background:#333; color:white; padding:40px; font-size:12px; text-align:center;">
+                                    <p style="font-weight:bold; font-size:14px; margin-bottom:5px;">SCHMELZDEPOT LOS SANTOS</p>
+                                    <p>Little Seoul West 121 · StateV · schmelzdepot@statev.de</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- NEW ORDER MODAL -->
+    <div id="order-modal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4 flex flex-col">
+            <div class="p-6 border-b flex justify-between items-center">
+                <h3 class="text-xl font-bold">Neuer Auftrag</h3>
+                <button onclick="closeOrderModal()" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <div class="p-6 space-y-4 flex-1 overflow-y-auto">
+                <div class="grid grid-cols-2 gap-4">
+                    <input id="m-name" placeholder="Kundenname" class="h-10 px-3 border rounded">
+                    <input id="m-number" placeholder="Auftrags-Nr." class="h-10 px-3 border rounded bg-gray-50" readonly>
+                </div>
+                <div class="border-t pt-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-bold text-sm">Positionen</label>
+                        <select id="m-item-select" onchange="addModalItemFromSelect(this)" class="h-8 border rounded text-xs w-48">
+                            <option value="">+ Artikel wählen</option>
+                        </select>
+                    </div>
+                    <div id="m-items" class="space-y-2"></div>
+                </div>
+            </div>
+            <div class="p-6 border-t bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                <button onclick="closeOrderModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded">Abbrechen</button>
+                <button onclick="saveNewOrder()" class="px-6 py-2 bg-orange-600 text-white font-bold rounded hover:bg-orange-700 shadow-lg shadow-orange-500/30">Auftrag erstellen</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA ---
+        const vehicleDB = {
+            "Albany": ["Alpha","Cavalcade","Hermes","Manana","Primo","V-STR","Washington"],
+            "Annis": ["Elegy RH8","Elegy Retro","Euros","Remus","ZR350"],
+            "Benefactor": ["Dubsta","Feltzer","Krieger","Schafter V12","Schwartzer","XLS"],
+            "Bravado": ["Banshee","Buffalo STX","Gauntlet Hellfire","Bison"],
+            "Declasse": ["Granger","Moonbeam","Sabre Turbo","Tampa","Vigero","Yosemite"],
+            "Dewbauchee": ["Massacro","Rapid GT","Seven-70"],
+            "Dinka": ["Blista Kanjo","Jester Classic","Sugoi"],
+            "Gallivanter": ["Baller ST"],
+            "Grotti": ["Cheetah Classic","Itali GTO","Turismo R"],
+            "Karin": ["Futo GTX","Kuruma","Sultan RS"],
+            "Obey": ["8F Drafter","Tailgater S"],
+            "Pegassi": ["Ignus","Infernus","Tempesta","Zentorno"],
+            "Pfister": ["Comet S2","Growler","Neon"],
+            "Ubermacht": ["Cypher","Rebla GTS","Sentinel XS","Zion Classic"],
+            "Vapid": ["Dominator ASP","Ellie","Guardian","Sandking XL","Speedo"]
+        };
+
+        const IMG_STD = "https://placehold.co/949x200/png?text=SCHMELZDEPOT+STANDARD"; 
+        const IMG_TRUCK = "https://placehold.co/949x200/orange/white/png?text=SCHMELZDEPOT+LIEFERSCHEIN";
+
+        let app = {
+            orders: [],
+            items: [], // { name, price, type: 'part'|'car', ... }
+            raw: [],   // { name, price }
+            eng: []    // { name, price }
+        };
+
+        // --- INIT ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+            navigate('dashboard');
+            lucide.createIcons();
+            
+            // Init Car Selects
+            const brandSel = document.getElementById('car-brand');
+            Object.keys(vehicleDB).sort().forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b; opt.textContent = b;
+                brandSel.appendChild(opt);
+            });
+            updateCarModels();
+        });
+
+        // --- NAVIGATION ---
+        function navigate(view) {
+            document.querySelectorAll('.visible-section').forEach(el => {
+                el.classList.remove('visible-section');
+                el.classList.add('hidden-section');
+            });
+            document.getElementById(`view-${view}`).classList.remove('hidden-section');
+            document.getElementById(`view-${view}`).classList.add('visible-section');
+            
+            document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('sidebar-active'));
+            document.getElementById(`nav-${view}`).classList.add('sidebar-active');
+
+            if(view === 'dashboard') renderDashboard();
+            if(view === 'orders') renderOrders();
+            if(view === 'inventory') renderInventory();
+            if(view === 'calculator') renderCalcIngDropdown();
+            if(view === 'documents') populateDocOrderSelect();
+        }
+
+        // --- STORAGE ---
+        function saveData() {
+            localStorage.setItem('sd_app_v2', JSON.stringify(app));
+            // Visual feedback handled by button text
+        }
+        function loadData() {
+            const str = localStorage.getItem('sd_app_v2');
+            if(str) app = JSON.parse(str);
+            if(!app.raw) app.raw = [];
+            if(!app.eng) app.eng = [];
+        }
+        function exportData() {
+            const str = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(app));
+            const node = document.createElement('a');
+            node.setAttribute("href", str);
+            node.setAttribute("download", "schmelzdepot_backup.json");
+            document.body.appendChild(node);
+            node.click();
+            node.remove();
+        }
+
+        // --- DASHBOARD ---
+        function renderDashboard() {
+            const open = app.orders.filter(o => o.status === 'open');
+            const done = app.orders.filter(o => o.status === 'done');
+            
+            document.getElementById('dash-open').textContent = open.length;
+            
+            const revenue = done.reduce((sum, o) => {
+                return sum + o.items.reduce((s, i) => s + (i.price * i.qty), 0);
+            }, 0);
+            document.getElementById('dash-revenue').textContent = fmtMoney(revenue);
+            document.getElementById('dash-items').textContent = app.items.length;
+        }
+
+        // --- ORDERS ---
+        function renderOrders() {
+            const listOpen = document.getElementById('orders-list-open');
+            const listDone = document.getElementById('orders-list-done');
+            listOpen.innerHTML = ''; listDone.innerHTML = '';
+
+            app.orders.forEach((o, i) => {
+                const total = o.items.reduce((s,x) => s+(x.price*x.qty), 0);
+                const el = document.createElement('div');
+                el.className = "bg-white p-3 rounded border shadow-sm cursor-pointer hover:shadow-md transition-all";
+                el.innerHTML = `
+                    <div class="flex justify-between font-bold text-sm"><span>${o.number}</span><span>${fmtMoney(total)}</span></div>
+                    <div class="text-xs text-gray-500">${o.customer}</div>
+                    <div class="mt-2 flex gap-2">
+                        ${o.status === 'open' 
+                          ? `<button onclick="setOrderStatus(${i}, 'done')" class="text-xs bg-green-50 text-green-600 px-2 py-1 rounded border border-green-200">Abschließen</button>`
+                          : `<button onclick="setOrderStatus(${i}, 'open')" class="text-xs bg-gray-50 text-gray-600 px-2 py-1 rounded border">Öffnen</button>`
+                        }
+                        <button onclick="delOrder(${i})" class="text-xs text-red-400 hover:text-red-600 px-2"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                    </div>
+                `;
+                if(o.status === 'open') listOpen.appendChild(el);
+                else listDone.appendChild(el);
+            });
+            lucide.createIcons();
+        }
+
+        function setOrderStatus(i, st) { app.orders[i].status = st; saveData(); renderOrders(); }
+        function delOrder(i) { if(confirm('Löschen?')) { app.orders.splice(i, 1); saveData(); renderOrders(); } }
+
+        // Modal Logic
+        let modalItems = [];
+        function openOrderModal() {
+            document.getElementById('m-name').value = '';
+            document.getElementById('m-number').value = 'ORD-' + Date.now().toString().slice(-6);
+            modalItems = [];
+            renderModalItems();
+            updateModalItemSelect();
+            document.getElementById('order-modal').classList.remove('hidden');
+        }
+        function closeOrderModal() { document.getElementById('order-modal').classList.add('hidden'); }
+        
+        function updateModalItemSelect() {
+            const sel = document.getElementById('m-item-select');
+            sel.innerHTML = '<option value="">+ Artikel wählen</option>';
+            app.items.forEach((it, idx) => {
+                const opt = document.createElement('option');
+                opt.value = idx;
+                opt.textContent = `${it.name} (${fmtMoney(it.price)})`;
+                sel.appendChild(opt);
+            });
+        }
+        function addModalItemFromSelect(sel) {
+            const idx = sel.value;
+            if(idx === '') return;
+            const it = app.items[idx];
+            modalItems.push({ name: it.name, price: it.price, qty: 1 });
+            renderModalItems();
+            sel.value = '';
+        }
+        function renderModalItems() {
+            const c = document.getElementById('m-items');
+            c.innerHTML = '';
+            modalItems.forEach((it, i) => {
+                const div = document.createElement('div');
+                div.className = "flex gap-2 items-center";
+                div.innerHTML = `
+                    <div class="flex-1 text-sm border px-2 h-8 flex items-center bg-gray-50 rounded">${it.name}</div>
+                    <input type="number" value="${it.qty}" onchange="modalItems[${i}].qty=Number(this.value)" class="w-16 h-8 px-2 border rounded text-sm text-center">
+                    <div class="w-20 text-right text-sm font-mono">${fmtMoney(it.price)}</div>
+                    <button onclick="modalItems.splice(${i},1);renderModalItems()" class="text-red-500 hover:bg-red-50 p-1 rounded"><i data-lucide="x" class="w-4 h-4"></i></button>
+                `;
+                c.appendChild(div);
+            });
+            lucide.createIcons();
+        }
+        function saveNewOrder() {
+            const ord = {
+                number: document.getElementById('m-number').value,
+                customer: document.getElementById('m-name').value || 'Unbekannt',
+                status: 'open',
+                items: [...modalItems],
+                date: new Date().toISOString()
+            };
+            app.orders.unshift(ord);
+            saveData();
+            closeOrderModal();
+            renderOrders();
+        }
+
+        // --- CALCULATOR ---
+        let calcIngs = [];
+        
+        function addRawMat() {
+            const n = document.getElementById('raw-name').value;
+            const p = parseFloat(document.getElementById('raw-price').value);
+            if(n && p) {
+                app.raw.push({ name: n, price: p });
+                document.getElementById('raw-name').value = '';
+                saveData();
+                renderRawList();
+                renderCalcIngDropdown();
+            }
+        }
+        function renderRawList() {
+            document.getElementById('raw-list').innerHTML = app.raw.map((r, i) => `
+                <div class="flex justify-between text-xs p-2 bg-gray-50 rounded">
+                    <span>${r.name}</span>
+                    <div class="flex gap-2">
+                        <span class="font-bold">${fmtMoney(r.price)}</span>
+                        <button onclick="app.raw.splice(${i},1);saveData();renderRawList();renderCalcIngDropdown()" class="text-red-500">x</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addEngine() {
+            const n = document.getElementById('eng-name').value;
+            const p = parseFloat(document.getElementById('eng-price').value);
+            if(n && p) {
+                app.eng.push({ name: n, price: p });
+                document.getElementById('eng-name').value = '';
+                saveData();
+                renderEngList();
+                renderCalcIngDropdown();
+            }
+        }
+        function renderEngList() {
+            document.getElementById('eng-list').innerHTML = app.eng.map((e, i) => `
+                <div class="flex justify-between text-xs p-2 bg-gray-50 rounded">
+                    <span>${e.name}</span>
+                    <div class="flex gap-2">
+                        <span class="font-bold">${fmtMoney(e.price)}</span>
+                        <button onclick="app.eng.splice(${i},1);saveData();renderEngList();renderCalcIngDropdown()" class="text-red-500">x</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleCalcMode() {
+            const mode = document.getElementById('calc-mode').value;
+            const carSelects = document.getElementById('calc-car-selects');
+            if(mode === 'car') {
+                carSelects.classList.remove('hidden');
+            } else {
+                carSelects.classList.add('hidden');
+                document.getElementById('calc-prod-name').value = '';
+            }
+        }
+        function updateCarModels() {
+            const brand = document.getElementById('car-brand').value;
+            const models = vehicleDB[brand] || [];
+            const sel = document.getElementById('car-model');
+            sel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+            autoFillName();
+        }
+        function autoFillName() {
+            const b = document.getElementById('car-brand').value;
+            const m = document.getElementById('car-model').value;
+            document.getElementById('calc-prod-name').value = `${b} ${m}`;
+        }
+
+        function renderCalcIngDropdown() {
+            const sel = document.getElementById('calc-ing-select');
+            let html = '<option value="">Wählen...</option>';
+            
+            if(app.raw.length) {
+                html += '<optgroup label="Rohstoffe">';
+                app.raw.forEach((r,i) => html += `<option value="raw-${i}">${r.name} (${fmtMoney(r.price)})</option>`);
+                html += '</optgroup>';
+            }
+            if(app.eng.length) {
+                html += '<optgroup label="Motoren">';
+                app.eng.forEach((e,i) => html += `<option value="eng-${i}">${e.name} (${fmtMoney(e.price)})</option>`);
+                html += '</optgroup>';
+            }
+            sel.innerHTML = html;
+        }
+
+        function addCalcIng() {
+            const val = document.getElementById('calc-ing-select').value;
+            const qty = parseFloat(document.getElementById('calc-ing-qty').value);
+            if(!val || !qty) return;
+
+            const [type, idxStr] = val.split('-');
+            const idx = parseInt(idxStr);
+            let item = null;
+            if(type === 'raw') item = app.raw[idx];
+            if(type === 'eng') item = app.eng[idx];
+
+            if(item) {
+                calcIngs.push({ name: item.name, price: item.price, qty });
+                renderCalcTable();
+            }
+        }
+
+        function renderCalcTable() {
+            const tbody = document.getElementById('calc-tbody');
+            tbody.innerHTML = calcIngs.map((row, i) => `
+                <tr>
+                    <td class="py-2 pl-2">${row.name}</td>
+                    <td class="text-right py-2">${row.qty}</td>
+                    <td class="text-right py-2">${fmtMoney(row.price * row.qty)}</td>
+                    <td class="text-center"><button onclick="calcIngs.splice(${i},1);renderCalcTable()" class="text-red-500 font-bold">x</button></td>
+                </tr>
+            `).join('');
+            recalcTotals();
+        }
+
+        function recalcTotals() {
+            const cost = calcIngs.reduce((s, x) => s + (x.price * x.qty), 0);
+            const margin = parseFloat(document.getElementById('calc-margin').value) || 0;
+            const profit = cost * (margin / 100);
+            const final = cost + profit;
+
+            document.getElementById('val-cost').textContent = fmtMoney(cost);
+            document.getElementById('val-profit').textContent = fmtMoney(profit);
+            document.getElementById('val-final').textContent = fmtMoney(final);
+        }
+
+        function saveCalcToInventory() {
+            const name = document.getElementById('calc-prod-name').value;
+            if(!name) return alert('Bitte Namen eingeben!');
+            
+            const cost = calcIngs.reduce((s, x) => s + (x.price * x.qty), 0);
+            const margin = parseFloat(document.getElementById('calc-margin').value) || 0;
+            const final = cost + (cost * (margin / 100));
+            
+            const mode = document.getElementById('calc-mode').value;
+            
+            app.items.push({
+                name,
+                price: final,
+                type: mode,
+                ingredients: [...calcIngs], // Save copy
+                margin
+            });
+            saveData();
+            alert('Gespeichert!');
+            calcIngs = [];
+            renderCalcTable();
+            document.getElementById('calc-prod-name').value = '';
+        }
+
+
+        // --- INVENTORY ---
+        function renderInventory() {
+            const tbody = document.getElementById('inv-list');
+            tbody.innerHTML = app.items.map((it, i) => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 font-medium text-gray-900">${it.name}</td>
+                    <td class="px-6 py-4 text-right">${fmtMoney(it.price)}</td>
+                    <td class="px-6 py-4 text-right">
+                        <span class="px-2 py-1 rounded text-xs font-bold ${it.type==='car' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'}">
+                            ${it.type === 'car' ? 'Fahrzeug' : 'Artikel'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <button onclick="app.items.splice(${i},1);saveData();renderInventory()" class="text-red-600 hover:text-red-900">Löschen</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        function addQuickItem() {
+            const n = document.getElementById('inv-quick-name').value;
+            const p = parseFloat(document.getElementById('inv-quick-price').value);
+            if(n && p) {
+                app.items.push({ name: n, price: p, type: 'part' });
+                saveData();
+                renderInventory();
+                document.getElementById('inv-quick-name').value = '';
+                document.getElementById('inv-quick-price').value = '';
+            }
+        }
+
+        // --- DOCUMENTS ---
+        let docItems = [];
+        function populateDocOrderSelect() {
+            const sel = document.getElementById('doc-load-order');
+            sel.innerHTML = '<option value="">-- Auftrag wählen --</option>';
+            app.orders.forEach((o, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = `${o.number} - ${o.customer}`;
+                sel.appendChild(opt);
+            });
+        }
+        document.getElementById('doc-load-order').addEventListener('change', (e) => {
+            const idx = e.target.value;
+            if(idx === '') return;
+            const o = app.orders[idx];
+            document.getElementById('doc-customerName').value = o.customer;
+            document.getElementById('doc-orderNumber').value = o.number;
+            document.getElementById('doc-deliveryDate').value = o.date.split('T')[0];
+            docItems = o.items.map(x => ({...x}));
+            renderDocItems();
+            updatePreview();
+        });
+        
+        ['docTypeSelect','doc-customerName','doc-orderNumber','doc-deliveryDate','doc-deliveryAddress'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updatePreview);
+        });
+
+        function addDocItem() { docItems.push({name:'',qty:1,price:0}); renderDocItems(); updatePreview(); }
+        function renderDocItems() {
+            const c = document.getElementById('doc-items-container');
+            c.innerHTML = '';
+            docItems.forEach((it, i) => {
+                const div = document.createElement('div');
+                div.className = "flex gap-2 items-center";
+                div.innerHTML = `
+                    <input value="${it.name}" oninput="docItems[${i}].name=this.value;updatePreview()" class="flex-1 h-8 border rounded text-xs px-2" placeholder="Item">
+                    <input type="number" value="${it.qty}" oninput="docItems[${i}].qty=Number(this.value);updatePreview()" class="w-12 h-8 border rounded text-xs text-center">
+                    <input type="number" value="${it.price}" oninput="docItems[${i}].price=Number(this.value);updatePreview()" class="w-16 h-8 border rounded text-xs text-center">
+                    <button onclick="docItems.splice(${i},1);renderDocItems();updatePreview()" class="text-red-500">x</button>
+                `;
+                c.appendChild(div);
+            });
+        }
+
+        function updatePreview() {
+            const type = document.getElementById('docTypeSelect').value;
+            const isDel = type === 'delivery';
+            const title = type === 'invoice' ? 'RECHNUNG' : (type==='confirmation'?'BESTELLBESTÄTIGUNG':'LIEFERSCHEIN');
+            
+            document.getElementById('doc-header-img').innerHTML = `<img src="${isDel ? IMG_TRUCK : IMG_STD}" class="w-full">`;
+            document.getElementById('p-title').textContent = title;
+            document.getElementById('p-name').textContent = document.getElementById('doc-customerName').value || '-';
+            document.getElementById('p-number').textContent = document.getElementById('doc-orderNumber').value || '-';
+            document.getElementById('p-address').textContent = document.getElementById('doc-deliveryAddress').value || '-';
+            
+            const dateV = document.getElementById('doc-deliveryDate').value;
+            document.getElementById('p-date').textContent = dateV ? new Date(dateV).toLocaleDateString('de-DE') : '-';
+
+            // Table
+            const tb = document.getElementById('p-tbody');
+            tb.innerHTML = '';
+            let total = 0;
+
+            docItems.forEach(it => {
+                const sum = it.price * it.qty;
+                total += sum;
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #eee';
+                tr.innerHTML = `
+                    <td style="padding:12px;">${it.name}</td>
+                    <td style="padding:12px; text-align:center;">${it.qty}</td>
+                    ${!isDel ? `<td style="padding:12px; text-align:right;">${fmtMoney(it.price)}</td>` : ''}
+                    ${!isDel ? `<td style="padding:12px; text-align:right; font-weight:bold;">${fmtMoney(sum)}</td>` : ''}
+                `;
+                tb.appendChild(tr);
+            });
+
+            // Footer / Prices
+            document.querySelectorAll('.p-price').forEach(el => el.style.display = isDel ? 'none' : 'table-cell');
+            document.getElementById('p-summary').style.display = isDel ? 'none' : 'block';
+            document.getElementById('p-total').textContent = fmtMoney(total);
+        }
+        
+        async function exportAsPNG() {
+            const el = document.getElementById('previewCanvas');
+            const wrap = el.parentElement;
+            const t = wrap.style.transform;
+            wrap.style.transform = 'none'; // reset scale for clear shot
+            
+            const cvs = await html2canvas(el, { scale: 1, useCORS: true });
+            
+            wrap.style.transform = t; // restore scale
+            
+            const a = document.createElement('a');
+            a.download = `Dokument.png`;
+            a.href = cvs.toDataURL();
+            a.click();
+        }
+
+        function fmtMoney(n) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n); }
+        
+        // --- STARTUP ---
+        loadData();
+        renderRawList();
+        renderEngList();
+    </script>
+</body>
+</html>

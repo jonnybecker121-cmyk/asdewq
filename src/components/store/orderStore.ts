@@ -74,11 +74,13 @@ interface OrderStore {
   autoArchiveCompleted: () => void;
   
   // Automatic payment processing
+  processPayment: (orderNumber: string, amount: number) => void;
   markOrderAsPaid: (orderId: string) => void;
   scheduleAutoClose: (orderId: string) => void;
   scheduleAutoArchive: (orderId: string) => void;
   cancelAutoClose: (orderId: string) => void;
   cancelAutoArchive: (orderId: string) => void;
+  checkForPaymentMatches: (bankTransactions: any[]) => void;
   
   updateSettings: (settings: { prefix: string; digits: number; counter: number }) => void;
   replaceState: (newState: Partial<OrderStore>) => void;
@@ -186,11 +188,6 @@ export const useOrderStore = create<OrderStore>()(
           ordersArchive: updateInArray(state.ordersArchive)
         };
       });
-
-      // Wenn auf "Abgeschlossen" gesetzt, Timer starten
-      if (updates.status === 'Abgeschlossen') {
-        get().scheduleAutoArchive(id);
-      }
     },
 
     deleteOrder: (id) => {
@@ -263,13 +260,7 @@ export const useOrderStore = create<OrderStore>()(
 
     moveToArchive: (id) => {
       const state = get();
-      let order = state.ordersDone.find(o => o.id === id);
-      let fromOpen = false;
-      
-      if (!order) {
-        order = state.ordersOpen.find(o => o.id === id);
-        fromOpen = true;
-      }
+      const order = state.ordersDone.find(o => o.id === id);
       
       if (!order) return;
 
@@ -279,13 +270,6 @@ export const useOrderStore = create<OrderStore>()(
           archived: true,
           finishedAt: order.finishedAt || new Date().toISOString()
         };
-
-        if (fromOpen) {
-          return {
-            ordersOpen: state.ordersOpen.filter(o => o.id !== id),
-            ordersArchive: [archivedOrder, ...state.ordersArchive]
-          };
-        }
 
         return {
           ordersDone: state.ordersDone.filter(o => o.id !== id),
@@ -316,30 +300,43 @@ export const useOrderStore = create<OrderStore>()(
 
     autoArchiveCompleted: () => {
       set((state) => {
-        const completedOrdersDone = state.ordersDone.filter(o => o.status === 'Abgeschlossen');
-        const remainingOrdersDone = state.ordersDone.filter(o => o.status !== 'Abgeschlossen');
-
-        const completedOrdersOpen = state.ordersOpen.filter(o => o.status === 'Abgeschlossen');
-        const remainingOrdersOpen = state.ordersOpen.filter(o => o.status !== 'Abgeschlossen');
+        const completedOrders = state.ordersDone.filter(o => o.status === 'Abgeschlossen');
+        const remainingOrders = state.ordersDone.filter(o => o.status !== 'Abgeschlossen');
         
-        const allCompletedOrders = [...completedOrdersDone, ...completedOrdersOpen];
-        
-        const archivedOrders = allCompletedOrders.map(order => ({
+        const archivedOrders = completedOrders.map(order => ({
           ...order,
           archived: true,
           finishedAt: order.finishedAt || new Date().toISOString()
         }));
 
-        if (allCompletedOrders.length > 0) {
-          // Toast removed
+        if (completedOrders.length > 0) {
+          if (typeof window !== 'undefined') {
+            import('sonner').then(({ toast }) => {
+              toast.success('Aufträge archiviert!', {
+                description: `${completedOrders.length} abgeschlossene Aufträge wurden ins Archiv verschoben.`,
+              });
+            }).catch(() => console.log('Toast notification not available'));
+          }
         }
 
         return {
-          ordersOpen: remainingOrdersOpen,
-          ordersDone: remainingOrdersDone,
+          ordersDone: remainingOrders,
           ordersArchive: [...archivedOrders, ...state.ordersArchive]
         };
       });
+    },
+
+    processPayment: (orderNumber, amount) => {
+      const state = get();
+      const allOrders = [...state.ordersOpen, ...state.ordersDone];
+      const order = allOrders.find(o => 
+        o.number === orderNumber || o.ref === orderNumber
+      );
+
+      if (order) {
+        console.log(`💳 Processing payment for order ${orderNumber}: ${amount}$`);
+        get().markOrderAsPaid(order.id);
+      }
     },
 
     markOrderAsPaid: (orderId) => {
@@ -377,7 +374,13 @@ export const useOrderStore = create<OrderStore>()(
         get().scheduleAutoClose(orderId);
       }, 100);
 
-      // Toast removed
+      if (typeof window !== 'undefined') {
+        import('sonner').then(({ toast }) => {
+          toast.success('Zahlung erkannt!', {
+            description: `Auftrag ${order?.number} wurde als bezahlt markiert.`,
+          });
+        }).catch(() => console.log('Toast notification not available'));
+      }
     },
 
     scheduleAutoClose: (orderId) => {
@@ -414,7 +417,15 @@ export const useOrderStore = create<OrderStore>()(
           newTimers.delete(orderId);
           set({ activeTimers: newTimers });
 
-          // Toast removed
+          if (typeof window !== 'undefined') {
+            const timeLabel = isTestMode ? '1 Minute' : '30 Minuten';
+            const order = currentState.ordersDone.find(o => o.id === orderId);
+            import('sonner').then(({ toast }) => {
+              toast.success('Auftrag automatisch abgeschlossen!', {
+                description: `Auftrag ${order?.number || order?.ref} wurde nach ${timeLabel} als abgeschlossen markiert.`,
+              });
+            }).catch(() => console.log('Toast notification not available'));
+          }
         }
       }, closeTimerDuration);
 
@@ -430,7 +441,7 @@ export const useOrderStore = create<OrderStore>()(
       if (!order || order.status !== 'Abgeschlossen') return;
 
       const isTestMode = localStorage.getItem('autoPaymentTestMode') === 'true';
-      const archiveTimerDuration = isTestMode ? 60000 : 1800000; // 30 Minuten 
+      const archiveTimerDuration = isTestMode ? 60000 : 86400000; 
 
       const archiveTimerId = setTimeout(() => {
         const currentState = get();
@@ -457,7 +468,15 @@ export const useOrderStore = create<OrderStore>()(
           newTimers.delete(`archive-${orderId}`);
           set({ activeTimers: newTimers });
 
-          // Toast removed
+          if (typeof window !== 'undefined') {
+            const timeLabel = isTestMode ? '1 Minute' : '24 Stunden';
+            const order = state.ordersArchive.find(o => o.id === orderId);
+            import('sonner').then(({ toast }) => {
+              toast.success('Auftrag automatisch archiviert!', {
+                description: `Auftrag ${order?.number || order?.ref} wurde nach ${timeLabel} ins Archiv verschoben.`,
+              });
+            }).catch(() => console.log('Toast notification not available'));
+          }
         }
       }, archiveTimerDuration);
 
@@ -487,6 +506,38 @@ export const useOrderStore = create<OrderStore>()(
         newTimers.delete(archiveKey);
         set({ activeTimers: newTimers });
       }
+    },
+
+    checkForPaymentMatches: (bankTransactions) => {
+      const state = get();
+      const allOrders = [...state.ordersOpen, ...state.ordersDone];
+      
+      bankTransactions.forEach(transaction => {
+        const transactionPurpose = (transaction.purpose || transaction.reference || '').toString().toUpperCase();
+        
+        // Robust Tracking: Normalize purpose (remove extra spaces/dashes for comparison)
+        const normalizedPurpose = transactionPurpose.replace(/[\s-]/g, '');
+        
+        allOrders.forEach(order => {
+          const orderNumber = order.number.toUpperCase();
+          const normalizedOrderNumber = orderNumber.replace(/[\s-]/g, '');
+          const orderRef = (order.ref || '').toUpperCase();
+          const normalizedOrderRef = orderRef.replace(/[\s-]/g, '');
+          
+          // Check if purpose contains the order number or reference
+          // We check the original AND normalized versions to be sure
+          const isMatch = 
+            transactionPurpose.includes(orderNumber) || 
+            (orderRef && transactionPurpose.includes(orderRef)) ||
+            normalizedPurpose.includes(normalizedOrderNumber) ||
+            (normalizedOrderRef && normalizedPurpose.includes(normalizedOrderRef));
+
+          if (isMatch && (order.status === 'Ausstehend' || order.status === 'In Bearbeitung' || order.status === 'Warten auf Zahlung')) {
+            console.log(`🎯 Match found in purpose for ${order.number}`);
+            get().processPayment(order.number, transaction.amount);
+          }
+        });
+      });
     },
 
     updateSettings: (settings) => {

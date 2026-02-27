@@ -350,14 +350,9 @@ export default function InventoryManager({ syncTrigger = 0 }: InventoryManagerPr
       const newStats = calculateStats(parseInt(statsDayRange));
       setStats(newStats);
     } catch (err) {
-      console.error('⚠️ [InventoryManager] State-V Sync issue:', err);
-      
-      if (err instanceof Error) {
-         toast.error(`Fehler beim Laden von State-V Daten: ${err.message}`);
-      } else {
-         toast.error('Unbekannter Fehler beim Laden von State-V Daten');
-      }
-      setError('Verbindungsfehler: Live API nicht erreichbar');
+      console.error('❌ [InventoryManager] State-V Sync fehlgeschlagen:', err);
+      toast.error('Fehler beim Laden von State-V API');
+      setError('State-V API nicht erreichbar');
     } finally {
       setLoading(false);
     }

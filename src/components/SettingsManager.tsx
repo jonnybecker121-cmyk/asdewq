@@ -1,21 +1,37 @@
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Settings, Zap, CheckCircle, Clock, Hash, Bell, Cloud, CloudOff, Activity } from 'lucide-react';
+import { Settings, Zap, Bug, TestTube, Timer, CheckCircle, Clock, Hash, Trash2, AlertTriangle, Code2, Activity, Bell, Cloud, CloudOff } from 'lucide-react';
 import { AutoPaymentSettings } from './AutoPaymentSettings';
+import { AutoPaymentDebugger } from './AutoPaymentDebugger';
+import { PaymentTestHelper } from './PaymentTestHelper';
+import { TestModeToggle } from './TestModeToggle';
 import { OrderNumberSettings } from './OrderNumberSettings';
 import { TabVisibilityManager } from './TabVisibilityManager';
+import { PerformanceDashboard } from './PerformanceDashboard';
 import { BackupManager } from './BackupManager';
 import { DiscordSettings } from './DiscordSettings';
+import { useDevMode } from './DevModeToggle';
 import { useSettingsStore } from './store/settingsStore';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 import { toast } from 'sonner@2.0.3';
 import { Lock, ShieldCheck, KeyRound, ArrowRight, RefreshCw } from 'lucide-react';
-import { ApiSettings } from './ApiSettings';
 
 export default function SettingsManager() {
+  const isDevMode = useDevMode();
+  const [devMode, setDevMode] = useState(isDevMode);
   const { syncEnabled, setSyncEnabled, workspaceId, setWorkspaceId, bankPin, setBankPin } = useSettingsStore();
   
   // State for PIN change verification
@@ -45,6 +61,23 @@ export default function SettingsManager() {
       setPinStep('new'); // Stay here if they just cleared it
       toast.info('PIN entfernt');
     }
+  };
+
+  const handleDevModeToggle = (checked: boolean) => {
+    setDevMode(checked);
+    localStorage.setItem('schmelzdepot-dev-mode', JSON.stringify(checked));
+    
+    // Dispatch event to notify other components
+    window.dispatchEvent(new Event('storage'));
+    
+    toast.success(
+      checked ? '⚡ Development-Modus aktiviert' : '✅ Produktiv-Modus aktiviert',
+      {
+        description: checked 
+          ? 'Erweiterte Funktionen sind jetzt verfügbar'
+          : 'System läuft im Produktiv-Modus',
+      }
+    );
   };
 
   const handleSyncToggle = (checked: boolean) => {
@@ -95,9 +128,6 @@ export default function SettingsManager() {
           </CardDescription>
         </CardHeader>
       </Card>
-
-      {/* API Settings */}
-      <ApiSettings />
 
       {/* Cloud Sync Settings */}
       <Card className="bg-card border border-primary/20 shadow-lg shadow-primary/5">
@@ -167,10 +197,140 @@ export default function SettingsManager() {
         </CardContent>
       </Card>
 
+      {/* Bank Security Settings */}
+      <Card className="bg-card border border-primary/20 shadow-lg shadow-primary/5">
+        <CardHeader className="border-b border-primary/20 bg-card">
+          <CardTitle className="flex items-center gap-2">
+            <div className="p-1.5 bg-primary/90 rounded-md shadow-md shadow-primary/10">
+              <Lock className="h-4 w-4 text-primary-foreground" />
+            </div>
+            <span className="text-black dark:text-white">Bank Sicherheit</span>
+          </CardTitle>
+          <CardDescription>
+            Sichern Sie den Zugriff auf Ihre Finanzdaten mit einem PIN
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-base flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                Bank PIN Verwaltung
+              </Label>
+              
+              {bankPin && pinStep === 'verify' ? (
+                <div className="space-y-3 p-4 bg-muted/30 rounded-lg border border-primary/10">
+                  <p className="text-sm font-medium">Geben Sie Ihren aktuellen PIN ein, um ihn zu ändern:</p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="password"
+                        placeholder="Alter PIN"
+                        value={oldPinInput}
+                        onChange={(e) => setOldPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        className="pl-10 font-mono tracking-widest"
+                        maxLength={4}
+                        onKeyDown={(e) => e.key === 'Enter' && handleVerifyOldPin()}
+                      />
+                    </div>
+                    <Button onClick={handleVerifyOldPin} variant="outline">
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 p-4 bg-primary/5 rounded-lg border border-primary/20">
+                  <p className="text-sm font-medium">
+                    {bankPin ? 'Geben Sie den neuen 4-stelligen PIN ein:' : 'Legen Sie einen neuen 4-stelligen PIN fest:'}
+                  </p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="password"
+                        placeholder="Neuer PIN (leer = kein Schutz)"
+                        value={newPinInput}
+                        onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        className="pl-10 font-mono tracking-widest"
+                        maxLength={4}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSetNewPin()}
+                      />
+                    </div>
+                    <Button onClick={handleSetNewPin} className="bg-primary hover:bg-primary/90">
+                      Speichern
+                    </Button>
+                    {bankPin && (
+                      <Button onClick={() => setPinStep('verify')} variant="ghost">
+                        Abbrechen
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              <p className="text-xs text-muted-foreground mt-2">
+                Dieser PIN schützt den "Bank"-Tab vor unbefugtem Zugriff auf demselben Gerät.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Development Mode Toggle */}
+      <Card className="bg-card border border-primary/20 shadow-lg shadow-primary/5">
+        <CardHeader className="border-b border-primary/20 bg-card">
+          <CardTitle className="flex items-center gap-2">
+            <div className="p-1.5 bg-primary/90 rounded-md shadow-md shadow-primary/10">
+              <Code2 className="h-4 w-4 text-primary-foreground" />
+            </div>
+            <span className="text-black dark:text-white">Development-Modus</span>
+          </CardTitle>
+          <CardDescription>
+            Aktivieren Sie erweiterte Entwickler-Funktionen und Debug-Tools
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="dev-mode" className="text-base">
+                Development-Modus
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {devMode 
+                  ? '⚡ Erweiterte Funktionen aktiv' 
+                  : '✓ System läuft im Produktiv-Modus'}
+              </p>
+            </div>
+            <Switch
+              id="dev-mode"
+              checked={devMode}
+              onCheckedChange={handleDevModeToggle}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Backup Manager */}
       <BackupManager />
 
-
+      {/* Discord Notifications */}
+      <Card className="bg-card border border-primary/20 shadow-lg shadow-primary/5">
+        <CardHeader className="border-b border-primary/20 bg-card">
+          <CardTitle className="flex items-center gap-2">
+            <div className="p-1.5 bg-primary/90 rounded-md shadow-md shadow-primary/10">
+              <Bell className="h-4 w-4 text-primary-foreground" />
+            </div>
+            <span className="text-black dark:text-white">Discord Integration</span>
+          </CardTitle>
+          <CardDescription>
+            Automatische Discord-Benachrichtigungen für Bewegungs-Log Änderungen
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DiscordSettings />
+        </CardContent>
+      </Card>
 
       {/* Tab Visibility Manager */}
       <TabVisibilityManager tabs={navigationTabs} />
@@ -211,15 +371,47 @@ export default function SettingsManager() {
         </CardContent>
       </Card>
 
+      {/* Test Mode Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TestTube className="h-5 w-5" />
+            Test Modus
+          </CardTitle>
+          <CardDescription>
+            Aktivieren Sie den Test-Modus für verkürzte Timer und Debug-Funktionen
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TestModeToggle />
+        </CardContent>
+      </Card>
+
+      {/* Payment Test Helper */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Timer className="h-5 w-5" />
+            Zahlungstest-Hilfsprogramm
+          </CardTitle>
+          <CardDescription>
+            Simulieren Sie Zahlungen und testen Sie die automatische Verarbeitung
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PaymentTestHelper />
+        </CardContent>
+      </Card>
+
       {/* System Status & Performance */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
-            System Status
+            System Status & Performance
           </CardTitle>
           <CardDescription>
-            Aktuelle Systemleistung und Integrationen
+            Aktuelle Systemleistung, Integrationen und Performance-Metriken
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -246,6 +438,29 @@ export default function SettingsManager() {
               </div>
             </div>
           </div>
+          
+          {/* Performance Dashboard eingebettet */}
+          {devMode && (
+            <div className="pt-4 border-t">
+              <PerformanceDashboard />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Auto Payment Debugger */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bug className="h-5 w-5" />
+            Debug-Tools
+          </CardTitle>
+          <CardDescription>
+            Erweiterte Debug-Informationen und Protokoll-Anzeige für die Fehlerbehebung
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AutoPaymentDebugger />
         </CardContent>
       </Card>
     </div>

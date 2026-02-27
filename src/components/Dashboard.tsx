@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
 import { Alert, AlertDescription } from './ui/alert';
 import { Skeleton } from './ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -25,16 +23,13 @@ import {
   CreditCard,
   History,
   RefreshCw,
-  Loader2,
-  Plus,
-  Trash2,
-  Archive
+  Loader2
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { useOrderStore, Order } from './store/orderStore';
 import { PaymentStatusIndicator } from './PaymentStatusIndicator';
 import { statevApi, SellOffer, BuyOffer, PurchaseLog } from './services/statevApi';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface DashboardProps {
   onNavigate?: (view: string) => void;
@@ -42,7 +37,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProps = {}) {
-  const { ordersOpen, ordersDone, ordersArchive, updateOrder, moveToArchive } = useOrderStore();
+  const { ordersOpen, ordersDone, ordersArchive, updateOrder } = useOrderStore();
   
   // Market data states
   const [sellOffers, setSellOffers] = useState<SellOffer[]>([]);
@@ -53,30 +48,6 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
   
   // Order details dialog state
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [newItem, setNewItem] = useState({ name: '', qty: 1, price: 0, disc: 0 });
-
-  const handleAddItem = () => {
-    if (!selectedOrder || !newItem.name) return;
-
-    const updatedItems = [...(selectedOrder.items || []), newItem];
-    const updatedOrder = { ...selectedOrder, items: updatedItems };
-
-    updateOrder(selectedOrder.id, { items: updatedItems });
-    setSelectedOrder(updatedOrder);
-    setNewItem({ name: '', qty: 1, price: 0, disc: 0 });
-    toast.success('Artikel hinzugefügt');
-  };
-
-  const handleRemoveItem = (index: number) => {
-    if (!selectedOrder) return;
-    const newItems = [...(selectedOrder.items || [])];
-    newItems.splice(index, 1);
-    
-    const updatedOrder = { ...selectedOrder, items: newItems };
-    updateOrder(selectedOrder.id, { items: newItems });
-    setSelectedOrder(updatedOrder);
-    toast.success('Artikel entfernt');
-  };
   
   // Calculate order totals
   const calculateOrderTotal = (order: Order) => {
@@ -248,6 +219,12 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
       description: 'Bestände prüfen und aktualisieren',
       icon: Package,
       action: 'inventory'
+    },
+    {
+      title: 'Finanzen überprüfen',
+      description: 'Bank- und Kontostände einsehen',
+      icon: Banknote,
+      action: 'bank'
     }
   ];
 
@@ -426,19 +403,15 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
                         </div>
                       </div>
                       <div className="ml-3 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        {isOpen && (order.status === 'Ausstehend' || order.status === 'In Bearbeitung') ? (
+                        {isOpen && (order.status === 'Ausstehend' || order.status === 'In Bearbeitung' || order.status === 'Warten auf Zahlung') ? (
                           <Select
                             value={order.status}
-                            onValueChange={(value) => {
-                              updateOrder(order.id, { status: value as any });
-                              toast.success('Status aktualisiert', {
-                                description: `Auftrag wurde auf "${value}" gesetzt`
-                              });
-                            }}
+                            onValueChange={(value) => handleStatusChange(order.id, value)}
                           >
                             <SelectTrigger className={`h-6 w-auto gap-1 px-2 py-0.5 text-xs shadow-sm ${
                               order.status === 'Ausstehend' ? 'bg-yellow-50 text-yellow-800 border-yellow-300 hover:bg-yellow-100' : 
-                              order.status === 'In Bearbeitung' ? 'bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100' : ''
+                              order.status === 'In Bearbeitung' ? 'bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100' : 
+                              order.status === 'Warten auf Zahlung' ? 'bg-orange-50 text-orange-800 border-orange-300 hover:bg-orange-100' : ''
                             }`}>
                               <div className="flex items-center gap-1.5 overflow-hidden">
                                 <span className="text-xs"><SelectValue /></span>
@@ -457,56 +430,38 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
                                   <span>In Bearbeitung</span>
                                 </div>
                               </SelectItem>
-                              <SelectItem value="Abgeschlossen">
+                              <SelectItem value="Warten auf Zahlung">
                                 <div className="flex items-center gap-2">
-                                  <CheckCircle className="h-3.5 w-3.5 text-gray-600" />
-                                  <span>Abgeschlossen</span>
+                                  <DollarSign className="h-3.5 w-3.5 text-orange-600" />
+                                  <span>Warten auf Zahlung</span>
                                 </div>
                               </SelectItem>
                             </SelectContent>
                           </Select>
                         ) : (
-                          <div className="flex items-center gap-2">
-                            <Badge 
-                              title={order.status === 'Abgeschlossen' ? "Automatisch in 30 Min. oder via 'Archiv' Tab" : undefined}
-                              variant={
-                                order.status === 'Ausstehend' ? 'secondary' : 
-                                order.status === 'In Bearbeitung' ? 'outline' : 
-                                order.status === 'Warten auf Zahlung' ? 'secondary' :
-                                order.status === 'Gezahlt' ? 'default' : 
-                                order.status === 'Abgeschlossen' ? 'secondary' : 'secondary'
-                              }
-                              className={`gap-1.5 px-3 py-1 text-xs ${
-                                order.status === 'Ausstehend' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : 
-                                order.status === 'In Bearbeitung' ? 'bg-blue-100 text-blue-800 border-blue-200' : 
-                                order.status === 'Warten auf Zahlung' ? 'bg-orange-100 text-orange-800 border-orange-200' :
-                                order.status === 'Gezahlt' ? 'bg-green-100 text-green-800 border-green-200' : 
-                                order.status === 'Abgeschlossen' ? 'bg-gray-100 text-gray-800 border-gray-200' : ''
-                              }`}
-                            >
-                              {order.status === 'Ausstehend' && <AlertCircle className="h-3 w-3" />}
-                              {order.status === 'In Bearbeitung' && <Clock className="h-3 w-3" />}
-                              {order.status === 'Warten auf Zahlung' && <DollarSign className="h-3 w-3" />}
-                              {order.status === 'Gezahlt' && <CheckCircle className="h-3 w-3" />}
-                              {order.status === 'Abgeschlossen' && <CheckCircle className="h-3 w-3" />}
-                              {order.status}
-                            </Badge>
-                            {order.status === 'Abgeschlossen' && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-6 w-6 rounded-full hover:bg-muted"
-                                title="Jetzt archivieren"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  moveToArchive(order.id);
-                                  toast.success('Auftrag archiviert');
-                                }}
-                              >
-                                <Archive className="h-3.5 w-3.5 text-muted-foreground" />
-                              </Button>
-                            )}
-                          </div>
+                          <Badge 
+                            variant={
+                              order.status === 'Ausstehend' ? 'secondary' : 
+                              order.status === 'In Bearbeitung' ? 'outline' : 
+                              order.status === 'Warten auf Zahlung' ? 'secondary' :
+                              order.status === 'Gezahlt' ? 'default' : 
+                              order.status === 'Abgeschlossen' ? 'secondary' : 'secondary'
+                            }
+                            className={`gap-1.5 px-3 py-1 text-xs ${
+                              order.status === 'Ausstehend' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : 
+                              order.status === 'In Bearbeitung' ? 'bg-blue-100 text-blue-800 border-blue-200' : 
+                              order.status === 'Warten auf Zahlung' ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                              order.status === 'Gezahlt' ? 'bg-green-100 text-green-800 border-green-200' : 
+                              order.status === 'Abgeschlossen' ? 'bg-gray-100 text-gray-800 border-gray-200' : ''
+                            }`}
+                          >
+                            {order.status === 'Ausstehend' && <AlertCircle className="h-3 w-3" />}
+                            {order.status === 'In Bearbeitung' && <Clock className="h-3 w-3" />}
+                            {order.status === 'Warten auf Zahlung' && <DollarSign className="h-3 w-3" />}
+                            {order.status === 'Gezahlt' && <CheckCircle className="h-3 w-3" />}
+                            {order.status === 'Abgeschlossen' && <CheckCircle className="h-3 w-3" />}
+                            {order.status}
+                          </Badge>
                         )}
                       </div>
                     </div>
@@ -669,7 +624,7 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
                                   <TableCell>{formatCurrency(offer.pricePerUnit)}</TableCell>
                                   <TableCell>{formatCurrency(offer.totalPrice)}</TableCell>
                                   <TableCell>
-                                    <Badge variant="secondary" className="bg-[#ff8000] text-white hover:bg-[#e67300]">{offer.availableAmount}x</Badge>
+                                    <Badge variant="secondary">{offer.availableAmount}x</Badge>
                                   </TableCell>
                                   <TableCell className="text-sm text-muted-foreground">
                                     {formatDate(offer.createdAt)}
@@ -722,7 +677,7 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
                                   <TableCell>{formatCurrency(offer.pricePerUnit)}</TableCell>
                                   <TableCell>{formatCurrency(offer.totalPrice)}</TableCell>
                                   <TableCell>
-                                    <Badge variant="secondary" className="bg-[#ff8000] text-white hover:bg-[#e67300]">{offer.availableAmount}x</Badge>
+                                    <Badge variant="secondary">{offer.availableAmount}x</Badge>
                                   </TableCell>
                                   <TableCell className="text-sm text-muted-foreground">
                                     {formatDate(offer.createdAt)}
@@ -828,7 +783,7 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
             <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
               <div>
                 <p className="text-sm text-muted-foreground">Bestellnummer</p>
-                <p className="font-medium">{selectedOrder.number}</p>
+                <p className="font-medium">#{selectedOrder.id.slice(0, 8)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Datum</p>
@@ -872,7 +827,6 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
                       <TableHead className="text-right">Einzelpreis</TableHead>
                       <TableHead className="text-right">Rabatt</TableHead>
                       <TableHead className="text-right">Zwischensumme</TableHead>
-                      <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -890,74 +844,9 @@ export default function Dashboard({ onNavigate, syncTrigger = 0 }: DashboardProp
                             {item.disc ? `${item.disc}%` : '-'}
                           </TableCell>
                           <TableCell className="text-right font-medium">{formatCurrency(subtotal)}</TableCell>
-                          <TableCell>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                              onClick={() => handleRemoveItem(index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
                         </TableRow>
                       );
                     })}
-                    
-                    {/* Add Item Row */}
-                    <TableRow className="bg-muted/30">
-                      <TableCell>
-                        <Input 
-                          placeholder="Artikelname" 
-                          value={newItem.name} 
-                          onChange={(e) => setNewItem({...newItem, name: e.target.value})}
-                          className="h-8 min-w-[120px]"
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Input 
-                          type="number" 
-                          min="1"
-                          value={newItem.qty} 
-                          onChange={(e) => setNewItem({...newItem, qty: parseInt(e.target.value) || 0})}
-                          className="h-8 w-20 text-right ml-auto"
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                         <div className="relative ml-auto w-24">
-                          <span className="absolute left-2 top-1.5 text-xs text-muted-foreground">$</span>
-                          <Input 
-                            type="number" 
-                            min="0"
-                            step="0.01"
-                            value={newItem.price} 
-                            onChange={(e) => setNewItem({...newItem, price: parseFloat(e.target.value) || 0})}
-                            className="h-8 pl-5 text-right"
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="relative ml-auto w-20">
-                          <Input 
-                            type="number" 
-                            min="0"
-                            max="100"
-                            value={newItem.disc} 
-                            onChange={(e) => setNewItem({...newItem, disc: parseFloat(e.target.value) || 0})}
-                            className="h-8 pr-6 text-right"
-                          />
-                          <span className="absolute right-2 top-1.5 text-xs text-muted-foreground">%</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        -
-                      </TableCell>
-                      <TableCell>
-                        <Button size="icon" className="h-8 w-8" onClick={handleAddItem} disabled={!newItem.name}>
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
                   </TableBody>
                 </Table>
               </div>

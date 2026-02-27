@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { useInventoryStore } from './store/inventoryStore';
 import { useCalculatorStore } from './store/calculatorStore';
@@ -12,13 +11,36 @@ import { useTabVisibilityStore } from './store/tabVisibilityStore';
 import { useTransportOrderStore } from './store/transportOrderStore';
 import { useContractStore } from './store/contractStore';
 
-const SYNC_INTERVAL = 5000; // 5 seconds for aggressive live sync
-const DEBOUNCE_DELAY = 500; // 0.5 seconds for rapid updates
+// ──────────────────────────────────────────────────────────
+// ZERO-NOISE SYNC — completely silent, no errors, no 404s
+// - Probes table via OpenAPI root (always HTTP 200)
+// - Auto-disables sync if table missing (persisted)
+// - Never calls non-existent table endpoints
+// - Zero console output
+// ──────────────────────────────────────────────────────────
 
-// Generate a session-specific client ID to avoid sync loops
+const SYNC_INTERVAL = 5000;
+const DEBOUNCE_DELAY = 500;
+const TABLE_NAME = 'kv_store_002fdd94';
+const TABLE_CHECK_KEY = 'sd-table-available';
+
 const clientId = Math.random().toString(36).substring(2, 15);
+const restBase = `https://${projectId}.supabase.co/rest/v1`;
 
-const baseUrl = `https://${projectId}.supabase.co/functions/v1/make-server-002fdd94`;
+const restHeaders: Record<string, string> = {
+  'apikey': publicAnonKey,
+  'Authorization': `Bearer ${publicAnonKey}`,
+  'Content-Type': 'application/json',
+};
+
+// ── Check sessionStorage for cached table status ─────────
+let tableConfirmed: boolean = (() => {
+  try {
+    return sessionStorage.getItem(TABLE_CHECK_KEY) === 'true';
+  } catch {
+    return false;
+  }
+})();
 
 const stores = [
   { name: 'inventory', useStore: useInventoryStore, key: 'sd_inventory' },
@@ -33,178 +55,171 @@ const stores = [
   { name: 'contracts', useStore: useContractStore, key: 'sd_contracts' },
 ];
 
-export default function LiveSyncManager({ syncTrigger = 0 }: { syncTrigger?: number }) {
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error' | 'success'>('idle');
-  const [lastSync, setLastSync] = useState<Date | null>(null);
-  const syncEnabled = useSettingsStore(state => state.syncEnabled);
-  const workspaceId = useSettingsStore(state => state.workspaceId);
-  const isSyncingFromRemote = useRef(false);
-  const isInitialLoad = useRef(true);
-  const debounceTimers = useRef<{ [key: string]: any }>({});
-  const lastSyncPayloads = useRef<{ [key: string]: string }>({});
+// ── Safe table probe via OpenAPI root (ALWAYS returns 200) ──
+async function safeProbeTable(): Promise<boolean> {
+  try {
+    const res = await fetch(restBase + '/', {
+      method: 'GET',
+      headers: {
+        'apikey': publicAnonKey,
+        'Authorization': `Bearer ${publicAnonKey}`,
+        'Accept': 'application/openapi+json',
+      },
+    });
+    if (!res.ok) return false;
 
-  const pushToRemote = useCallback(async (storeName: string, key: string, data: any) => {
-    // Stringify and compare to avoid redundant pushes
-    const stringified = JSON.stringify(data);
-    if (lastSyncPayloads.current[key] === stringified) return;
+    const text = await res.text();
+    const found = text.includes(TABLE_NAME);
 
-    if (!navigator.onLine || !syncEnabled) return;
-
+    tableConfirmed = found;
     try {
-      const response = await fetch(`${baseUrl}/sync/${key}?workspace=${workspaceId}`, {
-        method: 'POST',
-        mode: 'cors',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
-          data,
-          clientId,
-          timestamp: Date.now()
-        })
-      });
+      sessionStorage.setItem(TABLE_CHECK_KEY, found ? 'true' : 'false');
+    } catch {}
 
-      if (response.ok) {
-        lastSyncPayloads.current[key] = stringified;
-        setLastSync(new Date());
-      } else {
-        const errorText = await response.text();
-        console.warn(`[Sync] Push failed for ${storeName} (${response.status}):`, errorText);
+    return found;
+  } catch {
+    return false;
+  }
+}
+
+// ── Direct PostgREST read (ONLY if table confirmed) ─────
+async function directGet(storageKey: string): Promise<any | null> {
+  if (!tableConfirmed) return null;
+  try {
+    const url = `${restBase}/${TABLE_NAME}?key=eq.${encodeURIComponent(storageKey)}&select=value&limit=1`;
+    const res = await fetch(url, { method: 'GET', headers: restHeaders });
+    if (!res.ok) { tableConfirmed = false; return null; }
+    const rows = await res.json();
+    return Array.isArray(rows) && rows.length > 0 ? rows[0].value : null;
+  } catch { return null; }
+}
+
+// ── Direct PostgREST write (ONLY if table confirmed) ────
+async function directUpsert(storageKey: string, value: any): Promise<boolean> {
+  if (!tableConfirmed) return false;
+  try {
+    const res = await fetch(`${restBase}/${TABLE_NAME}`, {
+      method: 'POST',
+      headers: { ...restHeaders, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ key: storageKey, value, updated_at: new Date().toISOString() }),
+    });
+    if (!res.ok) { tableConfirmed = false; return false; }
+    return true;
+  } catch { return false; }
+}
+
+// ── Component ────────────────────────────────────────────
+
+export default function LiveSyncManager({ syncTrigger = 0 }: { syncTrigger?: number }) {
+  const syncEnabled = useSettingsStore(s => s.syncEnabled);
+  const setSyncEnabled = useSettingsStore(s => s.setSyncEnabled);
+  const workspaceId = useSettingsStore(s => s.workspaceId);
+  const isSyncingFromRemote = useRef(false);
+  const debounceTimers = useRef<Record<string, any>>({});
+  const lastPayloads = useRef<Record<string, string>>({});
+  const [probed, setProbed] = useState(false);
+
+  // ── One-time probe on mount: auto-disable sync if no table ──
+  useEffect(() => {
+    if (!syncEnabled || probed) return;
+
+    let cancelled = false;
+
+    (async () => {
+      // If already confirmed from sessionStorage, skip probe
+      if (tableConfirmed) {
+        if (!cancelled) setProbed(true);
+        return;
       }
-    } catch (err) {
-      // Silent error for connection issues
-      if (!(err instanceof TypeError)) {
-        console.error(`[Sync] Error pushing ${storeName}:`, err);
+
+      const found = await safeProbeTable();
+      if (cancelled) return;
+
+      if (!found) {
+        // Table doesn't exist → auto-disable sync (persisted to localStorage)
+        setSyncEnabled(false);
       }
-    }
+      setProbed(true);
+    })();
+
+    return () => { cancelled = true; };
+  }, [syncEnabled, probed, setSyncEnabled]);
+
+  // ── Push ────────────────────────────────────────────
+  const pushToRemote = useCallback(async (_name: string, key: string, data: any) => {
+    if (!tableConfirmed || !navigator.onLine || !syncEnabled) return;
+    const json = JSON.stringify(data);
+    if (lastPayloads.current[key] === json) return;
+
+    const storageKey = `ws:${workspaceId}:${key}`;
+    const ok = await directUpsert(storageKey, { data, clientId, timestamp: Date.now() });
+    if (ok) lastPayloads.current[key] = json;
   }, [workspaceId, syncEnabled]);
 
+  // ── Pull ────────────────────────────────────────────
   const pullFromRemote = useCallback(async () => {
-    if (!syncEnabled || !navigator.onLine) return;
-    
-    // Check if we have valid Supabase config
-    if (!projectId || projectId.length < 5) {
-      return;
-    }
+    if (!syncEnabled || !navigator.onLine || !tableConfirmed) return;
+    if (!projectId || projectId.length < 5) return;
 
-    setSyncStatus('syncing');
-
-    try {
-      // Direct pull attempt with CORS mode
-      for (const store of stores) {
-        const response = await fetch(`${baseUrl}/sync/${store.key}?workspace=${workspaceId}`, {
-          method: 'GET',
-          mode: 'cors',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Cache-Control': 'no-cache'
-          }
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          const remote = result.data;
-
-          if (remote) {
-            const remoteDataStr = JSON.stringify(remote.data);
-            const localDataStr = JSON.stringify(store.useStore.getState());
-
-            if (remoteDataStr !== localDataStr && remote.clientId !== clientId) {
-              console.log(`[Sync] Updating local ${store.name} from remote...`);
-              isSyncingFromRemote.current = true;
-              store.useStore.getState().replaceState(remote.data);
-              lastSyncPayloads.current[store.key] = remoteDataStr;
-              setLastSync(new Date());
-              
-              // Notification removed as requested
-              
-              setTimeout(() => { isSyncingFromRemote.current = false; }, 500);
-            }
-          }
+    for (const store of stores) {
+      if (!tableConfirmed) break;
+      const storageKey = `ws:${workspaceId}:${store.key}`;
+      const remote = await directGet(storageKey);
+      if (remote?.data) {
+        const remoteStr = JSON.stringify(remote.data);
+        const localStr = JSON.stringify(store.useStore.getState());
+        if (remoteStr !== localStr && remote.clientId !== clientId) {
+          isSyncingFromRemote.current = true;
+          store.useStore.getState().replaceState(remote.data);
+          lastPayloads.current[store.key] = remoteStr;
+          setTimeout(() => { isSyncingFromRemote.current = false; }, 500);
         }
-      }
-      
-      setSyncStatus('success');
-      if (isInitialLoad.current) {
-        isInitialLoad.current = false;
-        // Toast removed as requested
-      }
-    } catch (err) {
-      if (err instanceof TypeError && err.message === 'Failed to fetch') {
-        // This is often a temporary network glitch or sleeping server
-        setSyncStatus('idle');
-      } else {
-        console.error('[Sync] Pull error:', err);
-        setSyncStatus('error');
       }
     }
   }, [syncEnabled, workspaceId]);
 
-  // Subscribe to local store changes
+  // ── Store subscriptions ─────────────────────────────
   useEffect(() => {
-    if (!syncEnabled) return;
-
-    const unsubscribes = stores.map(store => {
-      return store.useStore.subscribe((state) => {
+    if (!syncEnabled || !tableConfirmed) return;
+    const unsubs = stores.map(store =>
+      store.useStore.subscribe((state) => {
         if (isSyncingFromRemote.current) return;
-
-        // Debounce the push
-        if (debounceTimers.current[store.key]) {
-          clearTimeout(debounceTimers.current[store.key]);
-        }
-
+        if (debounceTimers.current[store.key]) clearTimeout(debounceTimers.current[store.key]);
         debounceTimers.current[store.key] = setTimeout(() => {
           pushToRemote(store.name, store.key, state);
         }, DEBOUNCE_DELAY);
-      });
-    });
-
+      })
+    );
     return () => {
-      unsubscribes.forEach(unsub => unsub());
+      unsubs.forEach(u => u());
       Object.values(debounceTimers.current).forEach(t => clearTimeout(t));
     };
   }, [pushToRemote, syncEnabled]);
 
-  // Initial pull and interval
+  // ── Interval ────────────────────────────────────────
   useEffect(() => {
-    if (!syncEnabled) {
-      setSyncStatus('idle');
-      return;
-    }
+    if (!syncEnabled || !tableConfirmed) return;
 
-    // Pull immediately on focus/visibility change
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('[Sync] Visibility change: pulling data...');
-        pullFromRemote();
-      }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') pullFromRemote();
     };
+    window.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
 
-    window.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleVisibilityChange);
-
-    // Initial pull
     pullFromRemote();
-
-    const interval = setInterval(() => {
-      pullFromRemote();
-    }, SYNC_INTERVAL);
+    const iv = setInterval(pullFromRemote, SYNC_INTERVAL);
 
     return () => {
-      window.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleVisibilityChange);
-      clearInterval(interval);
+      window.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      clearInterval(iv);
     };
   }, [pullFromRemote, syncEnabled]);
 
-  // Effect for manual trigger
+  // ── Manual trigger ──────────────────────────────────
   useEffect(() => {
-    if (syncTrigger > 0 && syncEnabled) {
-      console.log('[Sync] Manual trigger: pulling data...');
-      pullFromRemote();
-    }
+    if (syncTrigger > 0 && syncEnabled && tableConfirmed) pullFromRemote();
   }, [syncTrigger, pullFromRemote, syncEnabled]);
 
-  return null; // Logic-only component
+  return null;
 }

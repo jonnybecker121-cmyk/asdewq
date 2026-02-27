@@ -1,3 +1,4 @@
+import { Toaster } from './components/ui/sonner';
 import { useState, useEffect, lazy, Suspense, useCallback } from 'react';
 import { 
   Sidebar, 
@@ -17,6 +18,7 @@ import {
   ShoppingCart, 
   FileText, 
   Package, 
+  Banknote,
   Building2,
   Settings,
   Home,
@@ -28,15 +30,14 @@ import {
   Cloud,
   CloudOff,
   Truck,
-  FileSignature,
+  FileSignature
 } from 'lucide-react';
-import { Toaster } from './components/ui/sonner';
-import { toast } from 'sonner';
 
 // Lazy load heavy components
 const OrderManager = lazy(() => import('./components/OrderManager'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const InventoryManager = lazy(() => import('./components/InventoryManager'));
+const BankManager = lazy(() => import('./components/BankManager'));
 const ArchiveManager = lazy(() => import('./components/ArchiveManager'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const SettingsManager = lazy(() => import('./components/SettingsManager'));
@@ -44,11 +45,12 @@ const PriceCalculator = lazy(() => import('./components/PriceCalculator'));
 const EmployeeManager = lazy(() => import('./components/EmployeeManager'));
 const TransportOrderManager = lazy(() => import('./components/TransportOrderManager'));
 const ContractManager = lazy(() => import('./components/ContractManager'));
+import AutoPaymentWatcher from './components/AutoPaymentWatcher';
 import UniversalBackupSystem from './components/UniversalBackupSystem';
+import LiveSyncManager from './components/LiveSyncManager';
 import { DarkModeToggle } from './components/DarkModeToggle';
 import { useTabVisibilityStore } from './components/store/tabVisibilityStore';
 import { useSettingsStore } from './components/store/settingsStore';
-import LiveSyncManager from './components/LiveSyncManager';
 
 const navigation = [
   { id: 'dashboard', title: 'Dashboard', icon: Home, description: 'Übersicht & Statistiken' },
@@ -58,6 +60,7 @@ const navigation = [
   { id: 'inventory', title: 'Lager & Logistik', icon: Package, description: 'Bestandsführung & Tracking' },
   { id: 'transport', title: 'Fahrbefehle', icon: Truck, description: 'Transport & Logistik' },
   { id: 'employees', title: 'Mitarbeiter', icon: Users, description: 'Personalverwaltung' },
+  { id: 'bank', title: 'Bank', icon: Banknote, description: 'Finanztransaktionen' },
   { id: 'calculator', title: 'Kalkulator', icon: Calculator, description: 'Preise & Margen' },
   { id: 'archive', title: 'Archiv', icon: Archive, description: 'Historische Daten' },
   { id: 'settings', title: 'Einstellungen', icon: Settings, description: 'System-Konfiguration' }
@@ -178,6 +181,8 @@ export default function App() {
         return <EmployeeManager />;
       case 'calculator':
         return <PriceCalculator syncTrigger={syncTrigger} />;
+      case 'bank':
+        return <BankManager syncTrigger={syncTrigger} />;
       case 'archive':
         return <ArchiveManager syncTrigger={syncTrigger} />;
       case 'settings':
@@ -194,6 +199,7 @@ export default function App() {
       <LiveSyncManager syncTrigger={syncTrigger} />
       {/* 100% Cloud-Synchronisation aktiv */}
       <UniversalBackupSystem />
+      <AutoPaymentWatcher />
       
       <div className="min-h-screen flex w-full bg-background">
         {/* Sidebar */}
@@ -221,7 +227,7 @@ export default function App() {
                       <SidebarMenuButton
                         onClick={() => handleTabChange(item.id)}
                         isActive={activeView === item.id}
-                        className={`w-full justify-start gap-3 px-3 py-2.5 mb-1 rounded-md transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-medium ${item.id === 'settings' ? 'hidden' : ''}`}
+                        className="w-full justify-start gap-3 px-3 py-2.5 mb-1 rounded-md transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-medium"
                       >
                         <item.icon className="h-4 w-4" strokeWidth={2} />
                         <span>{item.title}</span>
@@ -242,7 +248,7 @@ export default function App() {
                   <CloudOff className="h-3 w-3 text-red-500" />
                 )}
               </div>
-              <span className="text-muted-foreground">{isOnline ? 'Cloud-Synchronisiert' : 'Keine Verbindung'}</span>
+              <span className="text-muted-foreground">{isOnline ? 'Cloud-Synchronisiert' : 'Offline Mode'}</span>
               <Badge variant="outline" className={`ml-auto border-primary/40 text-primary text-[10px] px-1.5 py-0 h-5 ${isOnline ? 'bg-green-500/10 text-green-600 border-green-500/20' : 'bg-red-500/10 text-red-600 border-red-500/20'}`}>
                 {isOnline ? 'LIVE' : 'OFFLINE'}
               </Badge>
@@ -253,7 +259,7 @@ export default function App() {
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col">
           {/* Header */}
-          <header className="border-b border-border bg-card/80 px-6 py-3.5 sticky top-0 z-10 backdrop-blur-md">
+          <header className="border-b border-border bg-card px-6 py-3.5 sticky top-0 z-10 backdrop-blur-sm bg-card/95">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <SidebarTrigger className="lg:hidden" />
@@ -279,10 +285,7 @@ export default function App() {
                 </button>
                 <div className="w-px h-8 bg-border mx-1" />
                 <DarkModeToggle />
-                <div 
-                  className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-primary/80 shadow-lg shadow-primary/25 flex items-center justify-center border-2 border-primary/30 hover:scale-105 transition-transform cursor-pointer"
-                  onClick={() => handleTabChange('settings')}
-                >
+                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-primary/80 shadow-lg shadow-primary/25 flex items-center justify-center border-2 border-primary/30 hover:scale-105 transition-transform cursor-pointer">
                   <span className="text-sm text-primary-foreground">SD</span>
                 </div>
               </div>

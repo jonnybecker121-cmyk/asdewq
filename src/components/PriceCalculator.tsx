@@ -124,100 +124,6 @@ export default function PriceCalculator({ syncTrigger = 0 }: PriceCalculatorProp
     setCalcName('');
   };
 
-  // --- STANDARD RECIPES LOADER ---
-  const loadStandardRecipes = () => {
-    const neededMaterials = [
-      { name: 'Eisenerz', ekPrice: 2 },
-      { name: 'Holzbrett', ekPrice: 5 },
-      { name: 'Eisenbarren', ekPrice: 25 }, 
-      { name: 'Kupfererz', ekPrice: 3 },
-      { name: 'Silbererz', ekPrice: 4 },
-      { name: 'Golderz', ekPrice: 10 },
-      { name: 'Quarzsand', ekPrice: 1 },
-      { name: 'Kupferbarren', ekPrice: 35 }, 
-      { name: 'Zinkbarren', ekPrice: 30 }, 
-      { name: 'Kohlebrocken', ekPrice: 5 },
-      { name: 'Sphalerit', ekPrice: 4 },
-      { name: 'Titanerz', ekPrice: 15 },
-      { name: 'Felsbrocken', ekPrice: 2 },
-      { name: 'Graphit', ekPrice: 8 },
-      { name: 'Lithium', ekPrice: 20 },
-    ];
-
-    // 1. Sync Materials
-    neededMaterials.forEach( needed => {
-       const existing = useCalculatorStore.getState().materials.find(m => m.name === needed.name);
-       if (!existing) {
-         addMaterial({
-            name: needed.name,
-            ekPrice: needed.ekPrice,
-            unit: 'Stück',
-            category: 'raw'
-         });
-       }
-    });
-
-    // 2. Add Recipes (Delayed to ensure materials are in store)
-    setTimeout(() => {
-       const currentMaterials = useCalculatorStore.getState().materials;
-       const getM = (name: string) => currentMaterials.find(m => m.name === name)?.id;
-       
-       const recipes = [
-         { name: 'Eisenbarren', ingredients: [{ name: 'Eisenerz', qty: 10 }, { name: 'Holzbrett', qty: 1 }] },
-         { name: 'Stahlbarren', ingredients: [{ name: 'Eisenbarren', qty: 3 }, { name: 'Holzbrett', qty: 1 }] },
-         { name: 'Kupferbarren', ingredients: [{ name: 'Kupfererz', qty: 10 }, { name: 'Holzbrett', qty: 1 }] },
-         { name: 'Silberbarren', ingredients: [{ name: 'Silbererz', qty: 10 }, { name: 'Holzbrett', qty: 1 }] },
-         { name: 'Goldbarren', ingredients: [{ name: 'Golderz', qty: 10 }, { name: 'Holzbrett', qty: 1 }] },
-         { name: 'Glas', ingredients: [{ name: 'Quarzsand', qty: 80 }, { name: 'Holzbrett', qty: 1 }] },
-         { name: 'Messing', ingredients: [{ name: 'Kupferbarren', qty: 2 }, { name: 'Zinkbarren', qty: 1 }, { name: 'Kohlebrocken', qty: 2 }] },
-         { name: 'Zinkbarren', ingredients: [{ name: 'Sphalerit', qty: 12 }, { name: 'Kohlebrocken', qty: 2 }] },
-         { name: 'Titanbarren', ingredients: [{ name: 'Titanerz', qty: 10 }, { name: 'Kohlebrocken', qty: 4 }] },
-         { name: 'Zement / Beton', ingredients: [{ name: 'Felsbrocken', qty: 5 }, { name: 'Kohlebrocken', qty: 2 }] },
-         { name: 'Gusseisen', ingredients: [{ name: 'Eisenbarren', qty: 1 }, { name: 'Kohlebrocken', qty: 2 }] },
-         { name: 'Carbon / Graphit', ingredients: [{ name: 'Graphit', qty: 3 }] },
-         { name: 'Lithium', ingredients: [{ name: 'Lithium', qty: 3 }] },
-       ];
-       
-       let addedCount = 0;
-       recipes.forEach(recipe => {
-         const matUsages: MaterialUsage[] = [];
-         let possible = true;
-         
-         recipe.ingredients.forEach(ing => {
-            const mId = getM(ing.name);
-            if (mId) {
-              matUsages.push({ materialId: mId, quantity: ing.qty });
-            } else {
-              possible = false;
-            }
-         });
-         
-         if (possible && matUsages.length > 0) {
-            const existingProd = useCalculatorStore.getState().endProducts.find(p => p.name === recipe.name);
-            if (!existingProd) {
-               addEndProduct({
-                 name: recipe.name,
-                 materials: matUsages,
-                 productionTime: 0,
-                 productionCost: 0,
-                 markup: 20,
-                 markupType: 'percent',
-                 vkPrice: 0, 
-                 category: 'part'
-               });
-               addedCount++;
-            }
-         }
-       });
-       
-       if (addedCount > 0) {
-         toast.success(`${addedCount} Standard-Rezepte & Materialien geladen!`);
-       } else {
-         toast.info('Standards bereits vorhanden.');
-       }
-    }, 100);
-  };
-
   // --- RENDER HELPERS ---
   const rawMaterials = materials.filter(m => m.category === 'raw' || !m.category); // Legacy support
   
@@ -233,15 +139,9 @@ export default function PriceCalculator({ syncTrigger = 0 }: PriceCalculatorProp
             <p className="text-muted-foreground text-sm">Produktkalkulation & Rohstoffe</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={loadStandardRecipes} className="gap-2 border-primary/20 text-primary hover:bg-primary/10">
-            <Boxes className="h-4 w-4" />
-            Standards laden
-          </Button>
-          <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">
-              <Cloud className="h-4 w-4" />
-              <span>Ready</span>
-          </div>
+        <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">
+            <Cloud className="h-4 w-4" />
+            <span>Ready</span>
         </div>
       </div>
 
@@ -254,7 +154,7 @@ export default function PriceCalculator({ syncTrigger = 0 }: PriceCalculatorProp
           <TabsTrigger value="products" className="gap-2">
             <ShoppingCart className="h-4 w-4" />
             Gespeicherte Produkte
-            <Badge variant="secondary" className="ml-2 bg-[#ff8000] text-white hover:bg-[#e67300]">{endProducts.length}</Badge>
+            <Badge variant="secondary" className="ml-2">{endProducts.length}</Badge>
           </TabsTrigger>
           <TabsTrigger value="target" className="gap-2">
             <Target className="h-4 w-4" />
@@ -297,20 +197,10 @@ export default function PriceCalculator({ syncTrigger = 0 }: PriceCalculatorProp
                   <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
                     {rawMaterials.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Keine Rohstoffe</p>}
                     {rawMaterials.map(m => (
-                      <div key={m.id} className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-md group hover:bg-muted transition-colors">
-                        <span className="font-medium truncate max-w-[140px]" title={m.name}>{m.name}</span>
+                      <div key={m.id} className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-md group">
+                        <span>{m.name}</span>
                         <div className="flex items-center gap-2">
-                          <div className="relative">
-                             <span className="absolute left-2 top-1.5 text-[10px] text-muted-foreground pointer-events-none">$</span>
-                             <Input 
-                               type="number"
-                               step="0.01"
-                               className="h-7 w-20 pl-4 pr-2 text-right text-xs bg-transparent border-transparent hover:border-border hover:bg-background focus:bg-background focus:border-primary/50 transition-all"
-                               defaultValue={m.ekPrice}
-                               onBlur={(e) => useCalculatorStore.getState().updateMaterial(m.id, { ekPrice: parseFloat(e.target.value) || 0 })}
-                               onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                             />
-                          </div>
+                          <span className="font-mono font-medium">{fmtMoney(m.ekPrice)}</span>
                           <button onClick={() => deleteMaterial(m.id)} className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
                             <Trash2 className="h-3 w-3" />
                           </button>
@@ -501,19 +391,7 @@ export default function PriceCalculator({ syncTrigger = 0 }: PriceCalculatorProp
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right font-mono text-muted-foreground">{fmtMoney(cost)}</TableCell>
-                          <TableCell className="text-right font-bold font-mono">
-                            <div className="relative flex justify-end">
-                               <span className="absolute right-16 top-1.5 text-[10px] text-muted-foreground pointer-events-none">$</span>
-                               <Input 
-                                 type="number"
-                                 step="0.01"
-                                 className="h-7 w-24 pl-4 pr-2 text-right text-xs font-bold bg-transparent border-transparent hover:border-border hover:bg-background focus:bg-background focus:border-primary/50 transition-all"
-                                 defaultValue={p.vkPrice || 0}
-                                 onBlur={(e) => useCalculatorStore.getState().updateEndProduct(p.id, { vkPrice: parseFloat(e.target.value) || 0 })}
-                                 onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                               />
-                            </div>
-                          </TableCell>
+                          <TableCell className="text-right font-bold font-mono">{fmtMoney(p.vkPrice || 0)}</TableCell>
                           <TableCell className="text-right text-green-600 font-medium">+{fmtMoney(profit)}</TableCell>
                           <TableCell className="text-right">
                             <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => deleteEndProduct(p.id)}>
