@@ -1,0 +1,12 @@
+name = "schmelzdepot"
+compatibility_date = "2025-01-01"
+
+[site]
+bucket = "./dist"
+
+# ── Cloudflare Pages Build-Konfiguration ──────────────────
+# Dashboard-Einstellungen (alternativ zur UI):
+#   Build-Befehl:       npm run build
+#   Output-Verzeichnis: dist
+#   Node.js-Version:    18
+# ─────────────────────────────────────────────────────────
