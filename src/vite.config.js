@@ -1,18 +1,23 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { writeFileSync } from 'fs';
-import { resolve } from 'path';
+import { writeFileSync, mkdirSync } from 'fs';
+import { resolve, dirname } from 'path';
 
-// Plugin: Cloudflare Pages _redirects generieren
+// Plugin: Cloudflare Pages _redirects in das echte Output-Verzeichnis schreiben
+// Nutzt writeBundle(options) statt closeBundle() — options.dir ist der tatsächliche dist-Pfad
 function cloudflarePages() {
   return {
     name: 'cloudflare-pages',
-    closeBundle() {
-      // SPA Fallback — alle Routen → index.html
-      writeFileSync(
-        resolve('dist', '_redirects'),
-        '/* /index.html 200\n'
-      );
+    writeBundle(options) {
+      // options.dir = tatsächlicher Output-Pfad (auch auf Cloudflare korrekt)
+      const outDir = options.dir || resolve(process.cwd(), 'dist');
+      const redirectsPath = resolve(outDir, '_redirects');
+      try {
+        mkdirSync(dirname(redirectsPath), { recursive: true });
+        writeFileSync(redirectsPath, '/* /index.html 200\n', 'utf-8');
+      } catch (e) {
+        // silent — postbuild script als Fallback
+      }
     },
   };
 }
@@ -40,12 +45,11 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        // Deterministisches Hashing für optimales CDN-Caching
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]',
         manualChunks: {
-          'vendor-react':  ['react', 'react-dom'],
+          'vendor-react':   ['react', 'react-dom'],
           'vendor-ui': [
             '@radix-ui/react-dialog',
             '@radix-ui/react-dropdown-menu',
@@ -66,6 +70,5 @@ export default defineConfig({
     include: ['react', 'react-dom', 'zustand', 'lucide-react'],
   },
 
-  // public/ → dist/ (enthält _headers, favicon.ico, etc.)
   publicDir: 'public',
 });
