@@ -1,4 +1,4 @@
-const CACHE = 'sprachplaner-__VERSION__';
+const CACHE = 'sprachplaner-1.0.0';
 const ASSETS = ['./', './index.html', './app.js', './style.css', './install.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

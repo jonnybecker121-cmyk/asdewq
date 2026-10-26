@@ -5,8 +5,12 @@ Eigenständige App auf Grundlage der beigefügten Sprachplaner-HTML. Die bestehe
 ## Installieren
 
 - **Android ab Version 7:** Unter [GitHub Releases](https://github.com/jonnybecker121-cmyk/asdewq/releases) die Datei `Sprachplaner.apk` laden, öffnen und die Installation für diesen Browser erlauben.
-- **iPhone:** [Sprachplaner öffnen](https://jonnybecker121-cmyk.github.io/asdewq/sprachplaner/www/) in Safari → Teilen → Zum Home-Bildschirm. Die Seite einmal online vollständig öffnen; anschließend sind Planer und manuelle Eingabe offline verfügbar.
+- **iPhone (nach Aktivierung von GitHub Pages):** [Sprachplaner öffnen](https://jonnybecker121-cmyk.github.io/asdewq/sprachplaner/www/) in Safari → Teilen → Zum Home-Bildschirm. Die Seite einmal online vollständig öffnen; anschließend sind Planer und manuelle Eingabe offline verfügbar.
 - Auf Android ist auch die Installation als Web-App über das Browsermenü möglich.
+
+## Einmalig GitHub Pages aktivieren
+
+Die GitHub-Verbindung durfte Pages nicht aktivieren (HTTP 403). Im Repository unter **Settings → Pages → Build and deployment → Deploy from a branch** den Branch `coderabbit/convert-html-mobile-app/a3e178db` und `/ (root)` auswählen und speichern. Nach erfolgreichem Pages-Deployment funktioniert der iPhone-Link oben. Nach dem Zusammenführen des Pull Requests kann die Quelle auf `main` umgestellt werden. Vor jeder späteren Veröffentlichung den Cache-Versionsnamen in `www/sw.js` erhöhen. Die neue Version wird nach Schließen und erneutem Öffnen der App aktiv.
 
 ## Funktionen und Grenzen
 
