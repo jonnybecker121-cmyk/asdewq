@@ -9,3 +9,6 @@
 
   Run `npm run dev` to start the development server.
   
+## Sprachplaner mobile app
+
+Die neue Handy-App liegt separat unter [sprachplaner](sprachplaner/README.md).

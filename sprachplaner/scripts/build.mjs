@@ -1,0 +1,10 @@
+import { cp, rm, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+await rm('dist', { recursive: true, force: true });
+await cp('www', 'dist', { recursive: true });
+const files = ['index.html','app.js','style.css','install.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png'];
+const hash = createHash('sha256');
+for (const file of files) hash.update(await readFile(`www/${file}`));
+const version = hash.digest('hex').slice(0, 16);
+await writeFile('dist/sw.js', (await readFile('www/sw.js', 'utf8')).replace('__VERSION__', version));
+console.log(`Built Sprachplaner ${version}`);

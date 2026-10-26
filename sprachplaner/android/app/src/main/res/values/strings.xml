@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sprachplaner</string>
+    <string name="title_activity_main">Sprachplaner</string>
+    <string name="package_name">de.sprachplaner.app</string>
+    <string name="custom_url_scheme">de.sprachplaner.app</string>
+</resources>
