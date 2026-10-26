@@ -6,5 +6,5 @@ const files = ['index.html','app.js','style.css','install.js','manifest.webmanif
 const hash = createHash('sha256');
 for (const file of files) hash.update(await readFile(`www/${file}`));
 const version = hash.digest('hex').slice(0, 16);
-await writeFile('dist/sw.js', (await readFile('www/sw.js', 'utf8')).replace('sprachplaner-1.0.0', `sprachplaner-${version}`));
+await writeFile('dist/sw.js', (await readFile('www/sw.js', 'utf8')).replace(/sprachplaner-[^']+/, `sprachplaner-${version}`));
 console.log(`Built Sprachplaner ${version}`);

@@ -2211,6 +2211,16 @@ async function $t(e = null) {
       (_e = !1),
       (Ue = Ee = Date.now()));
     try {
+      if (window.location.protocol === "sprachplaner:") {
+        T = !0;
+        vt();
+        h("#live", S).textContent = "Satz eingeben oder diktieren";
+        h("#sub", S).textContent = "Zum Diktieren in das Eingabefeld klicken und Windows + H drücken. Mit OK wird dein Satz eingetragen.";
+        h("#l-stop", S).hidden = true;
+        h("#l-type", S).hidden = true;
+        ae("Zum Beispiel: Zahnarzt morgen um 15 Uhr. Für die Windows-Diktierfunktion muss das Mikrofon in Windows freigegeben sein.");
+        return;
+      }
       if (X.isNativePlatform()) await Sn();
       else if ((je(), (T = !0), vt(), yt(), je())) {
         const t = await En();

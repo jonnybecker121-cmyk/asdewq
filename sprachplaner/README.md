@@ -47,3 +47,25 @@ Keystore und Passwort gehören nicht ins Repository. Für Updates denselben Schl
 ## Prüfungen
 
 `npm test` prüft deutsche Datumserkennung, Aufgaben/Listen, lokale Profile, CRUD, kaskadierendes Löschen und Speicherfehler. Browserprüfung ergänzt die Bedienung bei Handybreite und den Offline-Cache. Mikrofonberechtigungen und echte Spracherkennung müssen zusätzlich auf den Zielhandys geprüft werden.
+
+## PC-Desktop-Version (Windows)
+
+Windows 10/11 (64 Bit): Im [Desktop-Release](https://github.com/jonnybecker121-cmyk/asdewq/releases/tag/sprachplaner-desktop-v1.0.0) die Datei **Sprachplaner-Setup-1.0.0.exe** herunterladen und starten. Der Installationsassistent erstellt Einträge im Startmenü und auf dem Desktop. Die App läuft danach ohne Browser und ohne GitHub Pages, auch offline.
+
+Termine, To-dos, Listen und die Auswertung deutscher Sätze sind enthalten. Der Mikrofonknopf öffnet ein Texteingabefeld: Zum Diktieren hineinklicken und **Windows + H** drücken, anschließend mit **OK** übernehmen. Dafür nutzt du die in Windows eingerichtete Diktierfunktion; sie kann Internet benötigen. Die Desktop-App selbst enthält keinen eigenen Spracherkennungsdienst.
+
+PC-Profile und Daten liegen unter `%APPDATA%\Sprachplaner`. Sie werden nicht mit dem Handy oder einer Browser-Version synchronisiert. Die App ist nicht mit einem kommerziellen Windows-Codezertifikat signiert; Windows kann beim ersten Start einen Hinweis auf einen unbekannten Herausgeber anzeigen. Unter **Hilfe → Über Sprachplaner** stehen Hinweise zur Speicherung und Spracheingabe.
+
+### Desktop entwickeln und prüfen
+
+```sh
+cd sprachplaner/desktop
+npm ci
+npm test
+npm start
+npm run build:win
+```
+
+Node 24. Die Electron-Laufzeit und der Windows-Installer verwenden eine eigene Lockdatei. `prepare:web` übernimmt die aktuellen gemeinsamen Quellen aus `www/`; generierte Desktop-Dateien liegen in `desktop/web/`. Die Fensteroberfläche läuft ohne Node-Zugriff und lädt nur mitgelieferte Dateien über einen festen lokalen App-Ursprung. Profile bleiben bei App-Neustarts und Updates erhalten.
+
+`npm run test:runtime` prüft das echte Desktop-Fenster, Profile, Aufgaben, Termine aus Texteingabe, Listen, die Abschottung des Fensters sowie gespeicherte Daten nach einem vollständigen App-Neustart. Unter Linux benötigt diese Prüfung eine Anzeige, beispielsweise `xvfb-run -a npm run test:runtime`. GitHub Actions führt diese Prüfungen auf Windows aus und baut den Installer als Artefakt **Sprachplaner-Windows-Setup**. Die vorhandenen Android- und Web-Builds laufen weiterhin separat.
