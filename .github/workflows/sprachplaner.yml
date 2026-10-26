@@ -1,0 +1,60 @@
+name: Sprachplaner
+on:
+  push:
+    paths: ['sprachplaner/**', '.github/workflows/sprachplaner.yml']
+  pull_request:
+    paths: ['sprachplaner/**', '.github/workflows/sprachplaner.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sprachplaner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: sprachplaner/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - run: npm ci
+      - run: npm test
+      - run: npm audit --audit-level=high
+      - run: npm run sync
+      - name: Build APK for testing
+        run: cd android && ./gradlew assembleDebug --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sprachplaner-Android-Test
+          path: sprachplaner/android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sprachplaner-Web
+          path: sprachplaner/dist
+      - name: Build signed APK (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SP_KEYSTORE_BASE64: ${{ secrets.SP_KEYSTORE_BASE64 }}
+          SP_SIGNING_PASSWORD: ${{ secrets.SP_SIGNING_PASSWORD }}
+        run: |
+          test -n "$SP_KEYSTORE_BASE64" && test -n "$SP_SIGNING_PASSWORD"
+          export SP_SIGNING_FILE="$RUNNER_TEMP/sprachplaner-release.jks"
+          trap 'rm -f "$SP_SIGNING_FILE"' EXIT
+          printf '%s' "$SP_KEYSTORE_BASE64" | base64 --decode > "$SP_SIGNING_FILE"
+          cd android
+          ./gradlew assembleRelease --console=plain
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: Sprachplaner-Android-Release
+          path: sprachplaner/android/app/build/outputs/apk/release/app-release.apk
