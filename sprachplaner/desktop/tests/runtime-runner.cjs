@@ -7,7 +7,7 @@ try {
   for (const phase of ['create', 'reopen']) {
     const result = spawnSync(require('electron'), [path.join(__dirname, 'runtime.cjs')], {
       env: { ...process.env, SP_DESKTOP_TEST_DATA: profile, SP_DESKTOP_TEST_PHASE: phase },
-      stdio: 'inherit', timeout: 45000,
+      stdio: 'inherit', timeout: 135000,
     });
     if (result.error) throw result.error;
     if (result.status !== 0) { process.exitCode = 1; break; }

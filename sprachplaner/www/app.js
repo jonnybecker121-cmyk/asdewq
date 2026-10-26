@@ -593,6 +593,18 @@ rollen tafel tafeln sack säcke beutel
     zehn: 10,
     elf: 11,
     zwölf: 12,
+    dreizehn: 13,
+    vierzehn: 14,
+    fünfzehn: 15,
+    sechzehn: 16,
+    siebzehn: 17,
+    achtzehn: 18,
+    neunzehn: 19,
+    zwanzig: 20,
+    einundzwanzig: 21,
+    zweiundzwanzig: 22,
+    dreiundzwanzig: 23,
+    vierundzwanzig: 24,
   },
   ot = new Set(["halbe", "halbes", "halben", "halber"]),
   It = new Set([
@@ -770,6 +782,18 @@ const ct = {
     zehn: 10,
     elf: 11,
     zwölf: 12,
+    dreizehn: 13,
+    vierzehn: 14,
+    fünfzehn: 15,
+    sechzehn: 16,
+    siebzehn: 17,
+    achtzehn: 18,
+    neunzehn: 19,
+    zwanzig: 20,
+    einundzwanzig: 21,
+    zweiundzwanzig: 22,
+    dreiundzwanzig: 23,
+    vierundzwanzig: 24,
   },
   qt = {
     früh: 7,
@@ -2214,11 +2238,38 @@ async function $t(e = null) {
       if (window.location.protocol === "sprachplaner:") {
         T = !0;
         vt();
-        h("#live", S).textContent = "Satz eingeben oder diktieren";
-        h("#sub", S).textContent = "Zum Diktieren in das Eingabefeld klicken und Windows + H drücken. Mit OK wird dein Satz eingetragen.";
-        h("#l-stop", S).hidden = true;
-        h("#l-type", S).hidden = true;
-        ae("Zum Beispiel: Zahnarzt morgen um 15 Uhr. Für die Windows-Diktierfunktion muss das Mikrofon in Windows freigegeben sein.");
+        h("#live", S).textContent = "Spracherkennung wird vorbereitet …";
+        h("#sub", S).textContent = "Das deutsche Sprachmodell wird lokal geladen. Gleich kannst du sprechen.";
+        const fallback = error => {
+          if (!T || L !== session) return;
+          clearInterval(ke);
+          h("#live", S).textContent = "Spracheingabe nicht verfügbar";
+          h("#sub", S).textContent = error.message;
+          ae(error.message + " Du kannst deinen Satz auch eintippen.");
+          h("#l-stop", S).hidden = true;
+        };
+        const session = window.SprachplanerSpeech.create({
+          onReady: () => {
+            if (!T || L !== session) return;
+            Ue = Ee = Date.now();
+            h("#sub", S).textContent = "Sprich deinen Termin, deine Aufgabe oder deine Produkte. Mit Fertig übernimmst du den erkannten Satz.";
+            kt();
+            yt();
+          },
+          onPartial: text => { if (T && L === session) { I = text; if (text) Ee = Date.now(); kt(); } },
+          onResult: text => { if (T && L === session) { oe = `${oe} ${text}`.trim(); I = ""; Ee = Date.now(); kt(); } },
+          onError: fallback,
+        });
+        L = session;
+        h("#l-type", S).onclick = () => {
+          clearInterval(ke);
+          session.abort();
+          h("#live", S).textContent = "Satz eingeben";
+          h("#l-stop", S).hidden = true;
+          ae("Tippe deinen Termin, deine Aufgabe oder deine Produkte ein.");
+          h("#demo-text", S).value = le();
+        };
+        void session.start().catch(fallback);
         return;
       }
       if (X.isNativePlatform()) await Sn();
@@ -2246,8 +2297,22 @@ async function $t(e = null) {
   }
 }
 async function he() {
-  if (T) {
+  if (T && !Q) {
     Q = !0;
+    if (window.location.protocol === "sprachplaner:") {
+      const session = L;
+      try { await session?.stop(); } catch (error) {
+        if (T && L === session) {
+          Q = !1;
+          ae(error.message);
+          h("#demo-text", S).value = le();
+          h("#l-stop", S).hidden = true;
+        }
+        return;
+      }
+      if (T && L === session) V(!1);
+      return;
+    }
     try {
       X.isNativePlatform() ? await x.stop() : L?.stop();
     } catch {}

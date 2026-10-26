@@ -15,7 +15,7 @@ test('Local app origin serves only explicitly packaged assets', () => {
 });
 
 test('Renderer policy blocks remote connections and executable embedding', () => {
-  for (const directive of ["connect-src 'none'", "object-src 'none'", "frame-src 'none'", "script-src 'self'", "worker-src 'none'"]) {
+  for (const directive of ["connect-src 'none'", "object-src 'none'", "frame-src 'none'", "script-src 'self'", "worker-src 'self'"]) {
     assert.ok(CSP.includes(directive));
   }
 });

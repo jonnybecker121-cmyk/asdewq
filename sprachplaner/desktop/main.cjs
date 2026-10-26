@@ -1,7 +1,8 @@
 const { app, BrowserWindow, Menu, protocol, session, dialog } = require('electron');
 const path = require('node:path');
 const { readFile } = require('node:fs/promises');
-const { resolveAsset, CSP } = require('./assets.cjs');
+const { resolveAsset, CSP, WORKER_CSP } = require('./assets.cjs');
+const { allowAudioRequest, allowAudioCheck } = require('./media-policy.cjs');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'sprachplaner', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -19,15 +20,18 @@ else {
   });
 
   app.whenReady().then(() => {
-    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-    session.defaultSession.setPermissionCheckHandler(() => false);
+    session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+      callback(contents === mainWindow?.webContents && allowAudioRequest(contents.getURL(), permission, details));
+    });
+    session.defaultSession.setPermissionCheckHandler((contents, permission, origin, details) =>
+      contents === mainWindow?.webContents && allowAudioCheck(contents.getURL(), permission, origin, details));
     session.defaultSession.on('will-download', event => event.preventDefault());
     protocol.handle('sprachplaner', async request => {
       const asset = resolveAsset(request.url, request.method);
       if (!asset) return new Response('Nicht gefunden', { status: 404 });
       try {
         return new Response(await readFile(path.join(__dirname, 'web', asset.name)), {
-          headers: { 'Content-Type': asset.type, 'Content-Security-Policy': CSP, 'X-Content-Type-Options': 'nosniff' },
+          headers: { 'Content-Type': asset.type, 'Content-Security-Policy': asset.name === 'vosk-worker.js' ? WORKER_CSP : CSP, 'X-Content-Type-Options': 'nosniff' },
         });
       } catch {
         return new Response('App-Datei fehlt. Bitte Sprachplaner erneut installieren.', { status: 500 });
@@ -46,7 +50,7 @@ else {
       ] },
       { label: 'Hilfe', submenu: [{ label: 'Über Sprachplaner', click: () => dialog.showMessageBox(mainWindow, {
         type: 'info', title: 'Sprachplaner', message: `Sprachplaner ${app.getVersion()}`,
-        detail: 'Termine, To-dos und Listen werden lokal auf diesem PC gespeichert.\n\nZum Diktieren das Eingabefeld anklicken und Windows + H drücken. Die Windows-Spracherkennung kann Internet benötigen.\n\nKeine Synchronisierung mit dem Handy.',
+        detail: 'Termine, To-dos und Listen werden lokal auf diesem PC gespeichert.\n\nZum Einsprechen auf das Mikrofon klicken. Die deutsche Spracherkennung läuft lokal auf diesem PC. Spracheingaben verlassen die App nicht.\n\nKeine Synchronisierung mit dem Handy.',
       }) }] },
     ]));
     createWindow();
@@ -62,7 +66,7 @@ function createWindow() {
     width: 1120, height: 800, minWidth: 600, minHeight: 560,
     title: 'Sprachplaner', backgroundColor: '#0f1220', show: false,
     icon: path.join(__dirname, 'web/icons/icon-512.png'),
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true },
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, autoplayPolicy: 'no-user-gesture-required' },
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', event => event.preventDefault());

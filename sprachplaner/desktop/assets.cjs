@@ -3,6 +3,11 @@ const TYPES = {
   'app.js': 'text/javascript; charset=utf-8',
   'install.js': 'text/javascript; charset=utf-8',
   'style.css': 'text/css; charset=utf-8',
+  'speech.js': 'text/javascript; charset=utf-8',
+  'vosk-worker.js': 'text/javascript; charset=utf-8',
+  'vosk.js': 'text/javascript; charset=utf-8',
+  'model-de.tar.gz': 'application/gzip',
+  'THIRD_PARTY_NOTICES.txt': 'text/plain; charset=utf-8',
   'desktop.css': 'text/css; charset=utf-8',
   'manifest.webmanifest': 'application/manifest+json',
   'icons/icon-192.png': 'image/png',
@@ -21,5 +26,6 @@ function resolveAsset(rawURL, method = 'GET') {
   }
 }
 
-const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; worker-src 'none'";
-module.exports = { resolveAsset, CSP };
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; worker-src 'self'";
+const WORKER_CSP = "default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'self' data:; worker-src 'none'; object-src 'none'";
+module.exports = { resolveAsset, CSP, WORKER_CSP };

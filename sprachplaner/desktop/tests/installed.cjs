@@ -22,7 +22,7 @@ async function freePort() {
 async function checkPhase(phase) {
   console.log(`Installed Windows app ${phase}: starting`);
   const port = await freePort();
-  const child = spawn(executable, [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`], { stdio: 'ignore' });
+  const child = spawn(executable, [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${join(__dirname, 'fixtures/german.wav')}`], { stdio: 'ignore' });
   const exited = once(child, 'exit');
   let socket;
   try {
@@ -63,7 +63,7 @@ async function checkPhase(phase) {
     });
     const evaluate = async expression => (await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
     const waitFor = async expression => {
-      for (let i = 0; i < 100; i++) { if (await evaluate(expression)) return; await pause(50); }
+      for (let i = 0; i < 1200; i++) { if (await evaluate(expression)) return; await pause(50); }
       throw new Error(`Installed app UI not ready: ${expression}`);
     };
     assert.equal(await evaluate('typeof require'), 'undefined');
@@ -75,8 +75,14 @@ async function checkPhase(phase) {
       await waitFor("!!document.querySelector('#add')");
       await evaluate("document.querySelector('#add').click(); document.querySelector('#f-title').value='Installed app persistence'; document.querySelector('#f-save').click()");
       await waitFor("!document.querySelector('#f-save')");
+      await evaluate("document.querySelector('#mic').click()");
+      await waitFor("!!document.querySelector('#live') && /zahnarzt/i.test(document.querySelector('#live').textContent) && /uhr/i.test(document.querySelector('#live').textContent)");
+      console.log('Installed offline speech:', await evaluate("document.querySelector('#live').textContent"));
+      await evaluate("document.querySelector('#l-stop').click()");
+      await waitFor("!document.querySelector('#live')");
     } else await waitFor("!!document.querySelector('#add')");
     assert.equal(await evaluate("(()=>{const db=JSON.parse(localStorage.getItem('sp_local_v1')); return db.data[db.session].some(item=>item.title==='Installed app persistence')})()"), true);
+    assert.equal(await evaluate("(()=>{const db=JSON.parse(localStorage.getItem('sp_local_v1')); const item=db.data[db.session].find(i=>i.kind==='event' && /zahnarzt/i.test(i.title)); const tomorrow=new Date(); tomorrow.setDate(tomorrow.getDate()+1); return !!item && new Date(item.starts_at).getHours()===15 && new Date(item.starts_at).toDateString()===tomorrow.toDateString()})()"), true);
     // Close through the browser so Electron flushes storage during shutdown.
     console.log(`Installed Windows app ${phase}: assertions passed, closing`);
     void call('Runtime.evaluate', { expression: 'window.close()' }).catch(() => {});

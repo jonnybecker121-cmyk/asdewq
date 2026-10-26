@@ -48,3 +48,14 @@ test('Corrupt storage is not silently replaced', () => {
   assert.throws(() => app.read());
   assert.equal(app.values.get('sp_local_v1'),'broken');
 });
+
+test('Offline German number words preserve appointment date and hour', () => {
+  const app = harness();
+  for (const [word, hour] of [['fünfzehn', 15], ['dreizehn', 13], ['zweiundzwanzig', 22]]) {
+    const event = app.parse(`Morgen um ${word} Uhr Zahnarzt`, new Date(2026, 9, 26, 10));
+    assert.equal(event.kind, 'event');
+    assert.equal(event.date.getDate(), 27);
+    assert.equal(event.date.getHours(), hour);
+    assert.match(event.title, /zahnarzt/i);
+  }
+});

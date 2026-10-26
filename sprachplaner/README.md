@@ -50,9 +50,9 @@ Keystore und Passwort gehören nicht ins Repository. Für Updates denselben Schl
 
 ## PC-Desktop-Version (Windows)
 
-Windows 10/11 (64 Bit): Im [Desktop-Release](https://github.com/jonnybecker121-cmyk/asdewq/releases/tag/sprachplaner-desktop-v1.0.0) die Datei **Sprachplaner-Setup-1.0.0.exe** herunterladen und starten. Der Installationsassistent erstellt Einträge im Startmenü und auf dem Desktop. Die App läuft danach ohne Browser und ohne GitHub Pages, auch offline.
+Windows 10/11 (64 Bit): Im [Desktop-Release](https://github.com/jonnybecker121-cmyk/asdewq/releases/tag/sprachplaner-desktop-v1.1.0) die Datei **Sprachplaner-Setup-1.1.0.exe** herunterladen und starten. Der Installationsassistent erstellt Einträge im Startmenü und auf dem Desktop. Die App läuft danach ohne Browser und ohne GitHub Pages, auch offline.
 
-Termine, To-dos, Listen und die Auswertung deutscher Sätze sind enthalten. Der Mikrofonknopf öffnet ein Texteingabefeld: Zum Diktieren hineinklicken und **Windows + H** drücken, anschließend mit **OK** übernehmen. Dafür nutzt du die in Windows eingerichtete Diktierfunktion; sie kann Internet benötigen. Die Desktop-App selbst enthält keinen eigenen Spracherkennungsdienst.
+Termine, To-dos, Listen und die Auswertung deutscher Sätze sind enthalten. Ab Version **1.1.0** startet ein Klick auf das Mikrofon direkt die Aufnahme: kurz warten, bis „Ich höre zu …“ erscheint, sprechen und mit **Fertig** übernehmen. Nach einer Sprechpause wird der Satz auch automatisch eingetragen. Das mitgelieferte deutsche Vosk-Sprachmodell erkennt die Sprache lokal und offline. **Windows + H ist nicht erforderlich.** Das erste Laden des Modells kann einige Sekunden dauern. Unter **Lieber tippen** kannst du bei Bedarf zur Texteingabe wechseln. Windows muss Desktop-Apps den Mikrofonzugriff erlauben.
 
 PC-Profile und Daten liegen unter `%APPDATA%\Sprachplaner`. Sie werden nicht mit dem Handy oder einer Browser-Version synchronisiert. Die App ist nicht mit einem kommerziellen Windows-Codezertifikat signiert; Windows kann beim ersten Start einen Hinweis auf einen unbekannten Herausgeber anzeigen. Unter **Hilfe → Über Sprachplaner** stehen Hinweise zur Speicherung und Spracheingabe.
 
@@ -68,4 +68,10 @@ npm run build:win
 
 Node 24. Die Electron-Laufzeit und der Windows-Installer verwenden eine eigene Lockdatei. `prepare:web` übernimmt die aktuellen gemeinsamen Quellen aus `www/`; generierte Desktop-Dateien liegen in `desktop/web/`. Die Fensteroberfläche läuft ohne Node-Zugriff und lädt nur mitgelieferte Dateien über einen festen lokalen App-Ursprung. Profile bleiben bei App-Neustarts und Updates erhalten.
 
-`npm run test:runtime` prüft das echte Desktop-Fenster, Profile, Aufgaben, Termine aus Texteingabe, Listen, die Abschottung des Fensters sowie gespeicherte Daten nach einem vollständigen App-Neustart. Unter Linux benötigt diese Prüfung eine Anzeige, beispielsweise `xvfb-run -a npm run test:runtime`. GitHub Actions führt diese Prüfungen auf Windows aus und baut den Installer als Artefakt **Sprachplaner-Windows-Setup**. Die vorhandenen Android- und Web-Builds laufen weiterhin separat.
+`npm run test:runtime` prüft das echte Desktop-Fenster, Profile, Aufgaben, Listen, die Abschottung des Fensters sowie gespeicherte Daten nach einem vollständigen App-Neustart. Eine synthetische deutsche WAV-Datei wird als Testmikrofon eingespeist und durch das echte WASM-Sprachmodell erkannt; der daraus angelegte Zahnarzttermin muss morgen um 15 Uhr liegen. Unter Linux benötigt diese Prüfung eine Anzeige, beispielsweise `xvfb-run -a npm run test:runtime`. GitHub Actions führt diese Prüfungen auf Windows aus und baut den Installer als Artefakt **Sprachplaner-Windows-Setup**. Die vorhandenen Android- und Web-Builds laufen weiterhin separat.
+
+### Offline-Sprachmodell
+
+Beim Desktop-Build wird `vosk-model-small-de-0.15` (45 MB, Apache-2.0) von der offiziellen Vosk-Modellseite geladen. Der Build prüft die fest hinterlegte SHA256-Prüfsumme und packt die Modelldateien in den Installer. Zur Laufzeit werden weder Modell noch Audiodaten aus dem Internet übertragen. Der mitgelieferte Worker verarbeitet die Mikrofonaufnahme; die App-Oberfläche selbst behält ihre gesperrten Netzwerkverbindungen und bekommt keinen Node-Zugriff. Nur Audio vom lokalen App-Ursprung wird freigegeben; Kamera und fremde Seiten bleiben gesperrt. Bibliothek, Modellquelle, Integrationsänderung und Lizenz stehen in `desktop/THIRD_PARTY_NOTICES.txt`.
+
+Die frühere 1.0-Version kann direkt mit dem neuen Installer aktualisiert werden; dasselbe lokale Datenverzeichnis bleibt erhalten. Tests verwenden ausschließlich synthetische Stimme, keine echten Benutzeraufnahmen. Die Verständlichkeit des eigenen Mikrofons bitte zusätzlich am PC prüfen.

@@ -2,6 +2,9 @@ const { app, BrowserWindow, net } = require('electron');
 const { once } = require('node:events');
 const { writeFile } = require('node:fs/promises');
 const assert = require('node:assert/strict');
+if (process.platform === 'linux') app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('use-fake-device-for-media-stream');
+app.commandLine.appendSwitch('use-file-for-fake-audio-capture', require('node:path').join(__dirname, 'fixtures/german.wav'));
 app.setPath('userData', process.env.SP_DESKTOP_TEST_DATA);
 require('../main.cjs');
 
@@ -9,14 +12,16 @@ async function run() {
   await app.whenReady();
   const win = BrowserWindow.getAllWindows()[0];
   assert.ok(win, 'Desktop window created');
+  win.webContents.on('console-message', event => { if (['error','warning'].includes(event.level)) console.error('Renderer:', event.message.slice(0, 700)); });
   if (win.webContents.isLoadingMainFrame()) await once(win.webContents, 'did-finish-load');
   const runJS = code => win.webContents.executeJavaScript(code);
   const waitFor = async condition => {
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 1600; i++) {
       if (await runJS(condition)) return;
+      if (i === 100 || i === 400) console.log('Waiting for UI:', await runJS("document.body.innerText"));
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    throw new Error(`UI did not become ready: ${condition}`);
+    throw new Error(`UI did not become ready: ${condition}; ${await runJS("document.body.innerText")}`);
   };
   const prefs = win.webContents.getLastWebPreferences();
   assert.equal(prefs.nodeIntegration, false);
@@ -34,10 +39,10 @@ async function run() {
     await runJS("document.querySelector('#add').click(); document.querySelector('#f-title').value='Desktop-Testaufgabe'; document.querySelector('#f-save').click()");
     await waitFor("!document.querySelector('#f-save')");
     await runJS("document.querySelector('#mic').click()");
-    await waitFor("!!document.querySelector('#demo-text')");
-    assert.match(await runJS("document.querySelector('#sub').textContent"), /Windows \+ H/);
-    await runJS("document.querySelector('#demo-text').value='Zahnarzt morgen um 15 Uhr'; document.querySelector('#demo-form').requestSubmit()");
-    await waitFor("!document.querySelector('#demo-text')");
+    await waitFor("!!document.querySelector('#live') && /zahnarzt/i.test(document.querySelector('#live').textContent) && /uhr/i.test(document.querySelector('#live').textContent)");
+    console.log('Offline speech recognition:', await runJS("document.querySelector('#live').textContent"));
+    await runJS("document.querySelector('#l-stop').click()");
+    await waitFor("!document.querySelector('#live')");
     await runJS("document.querySelector('#add').click(); document.querySelector('[data-kind=list]').click(); document.querySelector('#f-title').value='PC-Einkauf'; document.querySelector('#f-items').value='Milch\\nBrot'; document.querySelector('#f-save').click()");
     await waitFor("!document.querySelector('#f-save')");
     await runJS("document.querySelector('.detail button[aria-label=Zurück]')?.click(); document.querySelector('[data-tab=tasks]').click()");
@@ -48,7 +53,12 @@ async function run() {
   const db = await runJS("JSON.parse(localStorage.getItem('sp_local_v1'))");
   const items = db.data[db.session];
   assert.ok(items.some(item => item.title === 'Desktop-Testaufgabe'));
-  assert.ok(items.some(item => item.kind === 'event' && item.title.includes('Zahnarzt')));
+  const appointment = items.find(item => item.kind === 'event' && item.title.toLowerCase().includes('zahnarzt'));
+  if (!appointment) console.log("Recognized items:", JSON.stringify(items));
+  assert.ok(appointment);
+  assert.equal(new Date(appointment.starts_at).getHours(), 15);
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  assert.equal(new Date(appointment.starts_at).getDate(), tomorrow.getDate());
   assert.ok(items.some(item => item.kind === 'list' && item.title === 'PC-Einkauf'));
   assert.equal(items.filter(item => item.kind === 'item').length, 2);
   assert.equal(await runJS('document.documentElement.scrollWidth > innerWidth'), false);
@@ -60,5 +70,5 @@ async function run() {
   console.log(`Desktop runtime ${process.env.SP_DESKTOP_TEST_PHASE}: passed`);
   app.exit(0);
 }
-const timeout = setTimeout(() => { console.error('Desktop test timed out'); app.exit(1); }, 30000);
+const timeout = setTimeout(() => { console.error('Desktop test timed out'); app.exit(1); }, 120000);
 run().catch(error => { console.error(error); clearTimeout(timeout); app.exit(1); });

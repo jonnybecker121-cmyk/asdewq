@@ -1,7 +1,7 @@
 {
   "name": "sprachplaner-desktop",
   "productName": "Sprachplaner",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Sprachplaner für Windows – Termine, To-dos und Listen",
   "author": "jonnybecker121-cmyk",
   "private": true,
@@ -16,7 +16,10 @@
   },
   "devDependencies": {
     "electron": "45.0.0",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "fflate": "0.8.3",
+    "tar": "7.5.22",
+    "vosk-browser": "0.0.8"
   },
   "build": {
     "appId": "de.sprachplaner.desktop",
@@ -28,7 +31,8 @@
     "files": [
       "main.cjs",
       "assets.cjs",
-      "web/**/*"
+      "web/**/*",
+      "media-policy.cjs"
     ],
     "asar": true,
     "win": {
@@ -54,6 +58,11 @@
         "en_US"
       ],
       "language": "1031"
+    }
+  },
+  "overrides": {
+    "vosk-browser": {
+      "uuid": "11.1.1"
     }
   }
 }
