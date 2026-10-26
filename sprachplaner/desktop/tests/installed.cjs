@@ -20,6 +20,7 @@ async function freePort() {
   return port;
 }
 async function checkPhase(phase) {
+  console.log(`Installed Windows app ${phase}: starting`);
   const port = await freePort();
   const child = spawn(executable, [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`], { stdio: 'ignore' });
   const exited = once(child, 'exit');
@@ -35,22 +36,30 @@ async function checkPhase(phase) {
       if (!target) await pause(100);
     }
     assert.ok(target, 'Installed app opened the planner');
+    console.log(`Installed Windows app ${phase}: planner window opened`);
     socket = new WebSocket(target.webSocketDebuggerUrl);
-    await once(socket, 'open');
+    await Promise.race([once(socket, 'open'), pause(10000).then(() => { throw new Error('Debug connection did not open'); })]);
+    console.log(`Installed Windows app ${phase}: test connection ready`);
     let sequence = 0;
     const pending = new Map();
     socket.addEventListener('message', event => {
       const reply = JSON.parse(event.data);
       const entry = pending.get(reply.id);
       if (!entry) return;
+      clearTimeout(entry.timer);
       pending.delete(reply.id);
       if (reply.error || reply.result?.exceptionDetails) entry.reject(new Error(JSON.stringify(reply)));
       else entry.resolve(reply.result);
     });
     const call = (method, params = {}) => new Promise((resolve, reject) => {
       const id = ++sequence;
-      pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Test command timed out: ${method}`)); }, 10000);
+      pending.set(id, { resolve, reject, timer });
       socket.send(JSON.stringify({ id, method, params }));
+    });
+    socket.addEventListener('close', () => {
+      for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('Test connection closed')); }
+      pending.clear();
     });
     const evaluate = async expression => (await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
     const waitFor = async expression => {
@@ -69,7 +78,8 @@ async function checkPhase(phase) {
     } else await waitFor("!!document.querySelector('#add')");
     assert.equal(await evaluate("(()=>{const db=JSON.parse(localStorage.getItem('sp_local_v1')); return db.data[db.session].some(item=>item.title==='Installed app persistence')})()"), true);
     // Close through the browser so Electron flushes storage during shutdown.
-    await call('Browser.close');
+    console.log(`Installed Windows app ${phase}: assertions passed, closing`);
+    void call('Runtime.evaluate', { expression: 'window.close()' }).catch(() => {});
     await Promise.race([exited, pause(15000).then(() => { throw new Error('Installed app did not close'); })]);
     console.log(`Installed Windows app ${phase}: passed`);
   } finally {
